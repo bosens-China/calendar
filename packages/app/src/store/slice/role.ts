@@ -8,7 +8,7 @@ export interface Role {
 
 export interface RoleState {
   roles: Role[];
-  currentRole: null | string;
+  currentRole: string[];
 }
 
 const initialState: RoleState = {
@@ -18,7 +18,7 @@ const initialState: RoleState = {
       name: '默认用户',
     },
   ],
-  currentRole: '-1',
+  currentRole: ['-1'],
 };
 
 const roleSlice = createSlice({
@@ -28,13 +28,21 @@ const roleSlice = createSlice({
     addRole: (state, action: PayloadAction<Role>) => {
       state.roles.push(action.payload);
     },
-    setCurrentRole: (state, action: PayloadAction<string>) => {
+    updateRole: (state, action: PayloadAction<Role>) => {
+      const index = state.roles.findIndex((f) => f.id === action.payload.id);
+      state.roles[index] = action.payload;
+    },
+    removeRole: (state, action: PayloadAction<string>) => {
+      state.roles = state.roles.filter((f) => f.id !== action.payload);
+    },
+    setCurrentRole: (state, action: PayloadAction<string[]>) => {
       state.currentRole = action.payload;
     },
   },
 });
 
-export const { addRole, setCurrentRole } = roleSlice.actions;
+export const { addRole, setCurrentRole, removeRole, updateRole } =
+  roleSlice.actions;
 export default roleSlice.reducer;
 
 export const selectRole = (state: RootState) => state.role;

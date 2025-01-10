@@ -9,11 +9,13 @@ export interface List {
 }
 
 export interface TagState {
-  list: Record<string, List>;
+  tags: Record<string, List>;
+  openKeys: string[];
 }
 
 const initialState: TagState = {
-  list: {},
+  tags: {},
+  openKeys: [],
 };
 
 export const tagSlice = createSlice({
@@ -23,23 +25,46 @@ export const tagSlice = createSlice({
   reducers: {
     addTag: (state, action: PayloadAction<List>) => {
       const { id } = action.payload;
-      state.list[id] = action.payload;
+      state.tags[id] = action.payload;
     },
     removeTag: (state, action: PayloadAction<string>) => {
-      const name = action.payload;
-      delete state.list[name];
+      const id = action.payload;
+      delete state.tags[id];
+    },
+    deleteBasedOnRole: (state, action: PayloadAction<string>) => {
+      const id = action.payload;
+      Object.keys(state.tags).forEach((key) => {
+        if (state.tags[key].roleId === id) {
+          delete state.tags[key];
+        }
+      });
     },
     updateTag: (
       state,
       action: PayloadAction<{ id: string; data: Omit<List, 'id'> }>,
     ) => {
       const { id, data } = action.payload;
-      Object.assign(state.list[id], data);
+      Object.assign(state.tags[id], data);
+    },
+
+    updateOpenKeys: (state, action: PayloadAction<string[]>) => {
+      state.openKeys = action.payload;
+    },
+
+    appendOpenkeys: (state, action: PayloadAction<string>) => {
+      state.openKeys.push(action.payload);
     },
   },
 });
 
-export const { addTag, removeTag, updateTag } = tagSlice.actions;
+export const {
+  addTag,
+  removeTag,
+  updateTag,
+  deleteBasedOnRole,
+  updateOpenKeys,
+  appendOpenkeys,
+} = tagSlice.actions;
 // 选择器等其他代码可以使用导入的 `RootState` 类型
 export const selectTag = (state: RootState) => state.tag;
 

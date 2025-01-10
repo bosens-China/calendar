@@ -4,9 +4,11 @@ import { combineReducers, configureStore } from '@reduxjs/toolkit';
 import { persistReducer, persistStore } from 'redux-persist';
 import storage from 'redux-persist/lib/storage';
 import roleReducer from './slice/role';
+import holidayReducer from './slice/holiday';
+import { STORE_KEY } from '@/constant';
 
 const persistConfig = {
-  key: 'store',
+  key: STORE_KEY,
   storage,
 };
 
@@ -14,6 +16,7 @@ const rootReducer = combineReducers({
   tag: tagReducer,
   record: recordReducer,
   role: roleReducer,
+  holiday: holidayReducer,
 });
 const persistedReducer = persistReducer(persistConfig, rootReducer);
 

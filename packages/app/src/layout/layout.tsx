@@ -1,9 +1,9 @@
 import { Calendar, Layout, Space } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { CalendarProps, Tag } from 'antd';
-import React, { useState } from 'react';
-import { TagActionModal } from './components/tag-action-modal';
-import { List, selectTag } from '@/store/slice/tag';
+import React, { useMemo, useState } from 'react';
+import { FormDataTag, TagActionModal } from './components/tag-action-modal';
+import { selectTag } from '@/store/slice/tag';
 import { useAppSelector } from '@/store/hooks';
 import { Records, selectRecord } from '@/store/slice/record';
 import dayjs from 'dayjs';
@@ -14,31 +14,43 @@ import { selectRole } from '@/store/slice/role';
 const { Content } = Layout;
 
 export const LayoutGloal = () => {
-  const { list } = useAppSelector(selectTag);
+  const { tags } = useAppSelector(selectTag);
   const { records } = useAppSelector(selectRecord);
   const { currentRole } = useAppSelector(selectRole);
   // const { modal, message } = App.useApp();
   // const dispatch = useAppDispatch();
 
+  /*
+   * 返回角色选择下的所有标签
+   */
+  const allTag = useMemo(() => {
+    return Object.values(tags).filter((f) => currentRole.includes(f.roleId));
+  }, [currentRole, tags]);
+
   const dateCellRender = (date: Dayjs) => {
-    const value = Object.values(records)
-      .filter((f) => {
-        return f.some(
-          (item) =>
-            dayjs(date).isSame(item.time, 'day') && item.roleId === currentRole,
+    const value = records
+      .filter((item) => {
+        return (
+          dayjs(date).isBetween(item.startTime, item.endTime, 'day', '[]') &&
+          allTag.some((f) => f.id === item.tagId)
         );
       })
-      .flat(2);
+      // 过滤节假期
+      .filter((item) => {
+        return !item.skipDate.some((f) => {
+          return dayjs(f).isSame(date, 'day');
+        });
+      });
 
     return (
       <Space direction="vertical" className="w-100%">
         {value.map((item) => {
-          const { color, name } = list[item.tagId] || {};
+          const { color, name } = tags[item.tagId] || {};
           return (
             <React.Fragment key={item.id}>
               <Tag
                 color={color}
-                className="block z-1 select-none"
+                className="block z-1 select-none w-100%"
                 title={item.content}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -46,8 +58,8 @@ export const LayoutGloal = () => {
                   setRecordOpen(true);
                 }}
               >
-                <Space>
-                  <span>{item.content}</span>
+                <Space align="center">
+                  {!!item.content && <span>{item.content}</span>}
                   <span>[{name}]</span>
                 </Space>
               </Tag>
@@ -67,7 +79,7 @@ export const LayoutGloal = () => {
   };
 
   const [open, setOpen] = useState(false);
-  const [formData, setFormData] = useState<List>();
+  const [formData, setFormData] = useState<FormDataTag>();
   const [recordOpen, setRecordOpen] = useState(false);
   const [recordedInformation, setRecordedInformation] = useState<
     Partial<Records>
@@ -89,7 +101,10 @@ export const LayoutGloal = () => {
                   return;
                 }
 
-                setRecordedInformation({ time: date.valueOf() });
+                setRecordedInformation({
+                  endTime: date.valueOf(),
+                  startTime: date.valueOf(),
+                });
                 setRecordOpen(true);
               }}
               cellRender={cellRender}
@@ -97,11 +112,11 @@ export const LayoutGloal = () => {
           </Content>
         </Layout>
       </Layout>
+
       <TagActionModal
         open={open}
         setOpen={setOpen}
         formData={formData}
-        setFormData={setFormData}
       ></TagActionModal>
       <RecoedActionModal
         open={recordOpen}

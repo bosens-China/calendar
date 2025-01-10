@@ -1,21 +1,24 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { RootState } from '../store';
-import dayjs from 'dayjs';
 
 export interface Records {
   tagId: string;
-  content: string;
+  content?: string;
   id: string;
-  time: number;
-  roleId: string;
+  startTime: number;
+  endTime: number;
+  // 跳过的节假日日期
+  skipDate: Array<number>;
+  // 是否跳过节假日
+  selectedHoliday: boolean;
 }
 
 export interface RecordState {
-  records: Record<string, Records[]>;
+  records: Records[];
 }
 
 const initialState: RecordState = {
-  records: {},
+  records: [],
 };
 
 const recordSlice = createSlice({
@@ -23,18 +26,18 @@ const recordSlice = createSlice({
   initialState,
   reducers: {
     addRecord: (state, action: PayloadAction<Records>) => {
-      const { time } = action.payload;
-      const timeStr = dayjs(time).format('YYYY-MM-DD');
-      state.records[timeStr] ||= [];
-      state.records[timeStr].push(action.payload);
+      state.records.push(action.payload);
     },
     updateRecord: (
       state,
-      action: PayloadAction<{ id: string; data: Partial<Records> }>,
+      action: PayloadAction<{
+        id: string;
+        data: Partial<Records>;
+      }>,
     ) => {
       const { id, data } = action.payload;
-      const timeStr = dayjs(data.time).format('YYYY-MM-DD');
-      const record = state.records[timeStr]?.find((f) => f.id === id);
+
+      const record = state.records.find((f) => f.id === id);
       if (!record) {
         return;
       }
@@ -42,15 +45,12 @@ const recordSlice = createSlice({
     },
     removeRecordTag: (state, action: PayloadAction<string>) => {
       const tagId = action.payload;
-      Object.entries(state.records).forEach(([time, records]) => {
-        state.records[time] = records.filter((f) => f.tagId !== tagId);
-      });
+      state.records = state.records.filter((f) => f.tagId !== tagId);
     },
+
     removeRecord: (state, action: PayloadAction<string>) => {
       const id = action.payload;
-      Object.entries(state.records).forEach(([time, records]) => {
-        state.records[time] = records.filter((f) => f.id !== id);
-      });
+      state.records = state.records.filter((f) => f.id !== id);
     },
   },
 });
@@ -58,5 +58,5 @@ const recordSlice = createSlice({
 export const { addRecord, updateRecord, removeRecordTag, removeRecord } =
   recordSlice.actions;
 
-export const selectRecord = (state: RootState) => state.record;
 export default recordSlice.reducer;
+export const selectRecord = (state: RootState) => state.record;

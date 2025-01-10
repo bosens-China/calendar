@@ -7,8 +7,9 @@ import {
   Select,
   Badge,
   Button,
+  Switch,
 } from 'antd';
-import { FC, useEffect, useMemo } from 'react';
+import { FC, useEffect, useMemo, useRef } from 'react';
 import { selectTag } from '../../store/slice/tag';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
@@ -19,11 +20,14 @@ import {
 } from '@/store/slice/record';
 import dayjs, { Dayjs } from 'dayjs';
 import { v6 as uuid } from 'uuid';
-import { printAllDates } from '../utils';
 import { selectRole } from '@/store/slice/role';
+import { FestivalHoliday } from './festival-holiday/festival-holiday';
+import { selectHoliday } from '@/store/slice/holiday';
+import * as _ from 'lodash-es';
+import { isHoliday, printAllDates } from '../utils';
 
-const { RangePicker } = DatePicker;
 const { TextArea } = Input;
+const { RangePicker } = DatePicker;
 
 interface Props {
   open: boolean;
@@ -34,21 +38,25 @@ interface Props {
   >;
 }
 
+type FormValues = Omit<Records, 'id' | 'startTime' | 'endTime'> & {
+  time: [Dayjs, Dayjs];
+};
+
 export const RecoedActionModal: FC<Props> = ({
   setOpen,
   open,
   recordedInformation,
   setRecordedInformation,
 }) => {
-  const [form] = Form.useForm<Omit<Records, 'id'>>();
-  const { list } = useAppSelector(selectTag);
+  const [form] = Form.useForm<FormValues>();
+  const { tags } = useAppSelector(selectTag);
   const { currentRole } = useAppSelector(selectRole);
   const dispatch = useAppDispatch();
 
   const tagOptions = useMemo(() => {
-    return Object.entries(list)
+    return Object.entries(tags)
       .filter(([, { roleId }]) => {
-        return roleId === currentRole;
+        return currentRole.includes(roleId);
       })
       .map(([id, value]) => {
         return {
@@ -56,45 +64,48 @@ export const RecoedActionModal: FC<Props> = ({
           value: id,
         };
       });
-  }, [currentRole, list]);
+  }, [currentRole, tags]);
 
+  // 记忆上一次的选择
+  const rememberLast = useRef<FormValues>(null);
   const { message } = App.useApp();
   const handleOk = async () => {
     const values = await form.validateFields();
 
     (() => {
-      // 新建
-      if (!recordedInformation.id) {
-        const { tagId, content, time } = values;
-        const t = time as unknown as Dayjs[];
-        const timeList = printAllDates(t[0], t[1]);
-        timeList.forEach((item) => {
-          dispatch(
-            addRecord({
-              id: uuid(),
-              tagId,
-              content,
-              time: dayjs(item).valueOf(),
-              roleId: currentRole!,
-            }),
-          );
-        });
-        message.success('添加事项完成');
+      const { tagId, time, selectedHoliday } = values;
+      const content = values.content?.trim() || '';
+      const [startTime, endTime] = time;
+
+      // 勾选的范围日期实体化
+      const remaining = printAllDates(startTime, endTime);
+
+      const skipDate: number[] = selectedHoliday
+        ? remaining.filter((f) => isHoliday(f)).map((f) => f.valueOf())
+        : [];
+
+      const obj: Records = {
+        id: recordedInformation.id || uuid(),
+        tagId,
+        content,
+        startTime: dayjs(startTime).valueOf(),
+        endTime: dayjs(endTime).valueOf(),
+        skipDate,
+        selectedHoliday,
+      };
+      if (recordedInformation.id) {
+        dispatch(updateRecord({ id: obj.id, data: obj }));
+        message.success('已更新事项');
         return;
       }
-      dispatch(
-        updateRecord({
-          id: recordedInformation.id,
-          data: {
-            ...values,
-            time: dayjs(values.time).valueOf(),
-          },
-        }),
-      );
-      message.success('已更新事项');
+
+      dispatch(addRecord(obj));
+
+      message.success('添加事项完成');
       return;
     })();
     setOpen(false);
+    rememberLast.current = values;
     setRecordedInformation({});
   };
 
@@ -106,16 +117,24 @@ export const RecoedActionModal: FC<Props> = ({
     if (!open) {
       return;
     }
+    form.resetFields();
+    if (recordedInformation.id) {
+      form.setFieldsValue({
+        ...recordedInformation,
+        time: [recordedInformation.startTime, recordedInformation.endTime].map(
+          (f) => dayjs(f),
+        ),
+      });
+      return;
+    }
     const initialValues = {
       tag: tagOptions.at(0)?.value,
-      ...recordedInformation,
-      time: recordedInformation.id
-        ? dayjs(recordedInformation.time)
-        : [recordedInformation.time, recordedInformation.time].map((f) =>
-            dayjs(f),
-          ),
+      ...rememberLast.current,
+      time: [recordedInformation.startTime, recordedInformation.endTime].map(
+        (f) => dayjs(f),
+      ),
     };
-    form.resetFields();
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     form.setFieldsValue(initialValues as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,6 +143,23 @@ export const RecoedActionModal: FC<Props> = ({
   const title = useMemo(() => {
     return recordedInformation.id ? '编辑事项' : '添加事项';
   }, [recordedInformation.id]);
+
+  const time = Form.useWatch('time', form);
+  const { holidays } = useAppSelector(selectHoliday);
+
+  const years = useMemo(() => {
+    return _.uniq((time || []).map((f) => `${dayjs(f).year()}`));
+  }, [time]);
+
+  const remainingYears = useMemo(() => {
+    if (!time) {
+      return undefined;
+    }
+    return years.filter((f) => {
+      return !holidays[f];
+    });
+  }, [holidays, time, years]);
+
   return (
     <Modal
       title={
@@ -150,33 +186,55 @@ export const RecoedActionModal: FC<Props> = ({
     >
       <Form
         form={form}
-        labelCol={{ span: 4 }}
-        wrapperCol={{ span: 20 }}
-        style={{ maxWidth: 600 }}
+        labelCol={{ span: 5 }}
+        wrapperCol={{ span: 19 }}
         autoComplete="off"
         onFinish={handleOk}
         onFinishFailed={() => {}}
       >
-        <Form.Item<Records>
+        <Form.Item<FormValues>
           label="事项内容"
           name="content"
-          rules={[{ required: true, message: '事项内容不可省略!' }]}
+          // rules={[
+          //   {
+          //     required: true,
+          //     message: '事项内容不可省略!',
+          //     transform(value) {
+          //       return value.trim();
+          //     },
+          //   },
+          // ]}
         >
           <TextArea placeholder="请输入事项内容" />
         </Form.Item>
-        <Form.Item<Records>
+        <Form.Item<FormValues>
           label="关联标签"
           name="tagId"
           rules={[{ required: true, message: '关联标签不可省略!' }]}
         >
           <Select options={tagOptions} placeholder="请输入关联标签" />
         </Form.Item>
-        <Form.Item<Records>
+        <Form.Item<FormValues>
           label="关联时间"
           name="time"
           rules={[{ required: true, message: '关联时间不可省略!' }]}
         >
-          {!recordedInformation.id ? <RangePicker /> : <DatePicker />}
+          <RangePicker />
+        </Form.Item>
+        <Form.Item<FormValues>
+          label="忽略节假日（含周末）"
+          name="selectedHoliday"
+          valuePropName="checked"
+          extra={
+            <FestivalHoliday
+              open={!!(time && remainingYears?.length)}
+              years={remainingYears!}
+            ></FestivalHoliday>
+          }
+        >
+          <Switch
+            disabled={!!(remainingYears && remainingYears.length)}
+          ></Switch>
         </Form.Item>
       </Form>
     </Modal>
