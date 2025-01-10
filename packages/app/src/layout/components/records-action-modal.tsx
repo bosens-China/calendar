@@ -127,13 +127,20 @@ export const RecoedActionModal: FC<Props> = ({
       });
       return;
     }
+
     const initialValues = {
-      tag: tagOptions.at(0)?.value,
+      tagId: tagOptions.at(0)?.value,
       ...rememberLast.current,
       time: [recordedInformation.startTime, recordedInformation.endTime].map(
         (f) => dayjs(f),
       ),
     };
+    /*
+     * 检测标签有效性，如果没有则回滚
+     */
+    if (!tagOptions.some((f) => f.value === initialValues.tagId)) {
+      initialValues.tagId = tagOptions.at(0)?.value;
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     form.setFieldsValue(initialValues as any);
@@ -222,7 +229,12 @@ export const RecoedActionModal: FC<Props> = ({
           <RangePicker />
         </Form.Item>
         <Form.Item<FormValues>
-          label="忽略节假日（含周末）"
+          label={
+            <div>
+              <div>忽略节假日</div>
+              <div>（含周末）</div>
+            </div>
+          }
           name="selectedHoliday"
           valuePropName="checked"
           extra={
