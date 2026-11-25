@@ -6,6 +6,13 @@
 # Dist
 node_modules
 dist/
+*.tsbuildinfo
+
+# Server SQLite Data
+packages/server/data/
+*.db
+*.sqlite
+*.sqlite3
 
 # IDE
 .vscode/*

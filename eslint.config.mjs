@@ -1,5 +1,6 @@
 import { fixupConfigRules } from '@eslint/compat';
 import js from '@eslint/js';
+import reactCompiler from 'eslint-plugin-react-compiler';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactJsx from 'eslint-plugin-react/configs/jsx-runtime.js';
 import react from 'eslint-plugin-react/configs/recommended.js';
@@ -7,7 +8,15 @@ import globals from 'globals';
 import ts from 'typescript-eslint';
 
 export default [
-  { languageOptions: { globals: globals.browser } },
+  { ignores: ['**/dist/**', '**/node_modules/**', 'packages/server/data/**'] },
+  {
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...fixupConfigRules([
@@ -20,12 +29,20 @@ export default [
     reactJsx,
   ]),
   {
+    files: ['packages/app/**/*.{ts,tsx}'],
     plugins: {
       'react-hooks': reactHooks,
+      'react-compiler': reactCompiler,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      'react-compiler/react-compiler': 'error',
+      'react/prop-types': 'off',
     },
   },
-  { ignores: ['dist/'] },
+  {
+    rules: {
+      'react/prop-types': 'off',
+    },
+  },
 ];

@@ -1,45 +1,45 @@
-import { ConfigProvider, App as GlobalApp } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
-import './App.css';
+import React, { useEffect } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'sonner';
 import 'dayjs/locale/zh-cn';
-import { LayoutGloal } from './layout/layout';
-import isBetween from 'dayjs/plugin/isBetween'; // ES 2015
 import dayjs from 'dayjs';
+import { queryClient } from './queryClient';
+import { useAuthStore } from './store/authStore';
+import { useThemeStore } from './store/themeStore';
+import { LoginView } from './views/LoginView';
+import { CalendarView } from './views/CalendarView';
+import { Spinner } from './components/ui/primitives';
 
-dayjs.extend(isBetween);
+dayjs.locale('zh-cn');
 
-const App = () => {
-  return (
-    <ConfigProvider
-      theme={{
-        cssVar: true,
-        hashed: false,
-        token: {
-          // colorPrimary: '#67A4FA',
-        },
-        components: {
-          Layout: {
-            siderBg: '#F9F9FF',
-            headerBg: '#F9F9FF',
-          },
-          Divider: {
-            textPaddingInline: 0,
-            margin: 0,
-            marginLG: 0,
-          },
-          Calendar: {
-            // paddingXS: 0,
-            // marginXS: 0,
-          },
-        },
-      }}
-      locale={zhCN}
-    >
-      <GlobalApp>
-        <LayoutGloal />
-      </GlobalApp>
-    </ConfigProvider>
-  );
+const AppContent: React.FC = () => {
+  const { token, user, isInitialized, initAuth } = useAuthStore();
+
+  useEffect(() => {
+    initAuth();
+  }, [initAuth]);
+
+  if (!isInitialized) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-zinc-950">
+        <Spinner label="正在加载排期画布..." />
+      </div>
+    );
+  }
+
+  if (!token || !user) {
+    return <LoginView />;
+  }
+
+  return <CalendarView key={user.id} />;
 };
 
-export default App;
+export const App: React.FC = () => {
+  const { resolvedTheme } = useThemeStore();
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Toaster theme={resolvedTheme} richColors position="top-center" />
+      <AppContent />
+    </QueryClientProvider>
+  );
+};
