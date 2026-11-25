@@ -1,31 +1,55 @@
-import type { DatabaseSync } from 'node:sqlite';
-import { DEFAULT_CN_HOLIDAYS, normalizeWorkSlots } from '@calendar/shared';
+import type { CalendarDb } from './db.js';
+import {
+  calendarDate, DEFAULT_CN_HOLIDAYS, getCalendarYear, holidayFields, holidayResetBody,
+  holidaySettings, holidaySyncBody, roleLabelsSchema, validateWorkSlots, yearQuery,
+} from '@calendar/shared';
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { requireAdmin, type Env } from './auth.js';
-import { replaceHolidays } from './db.js';
-import { holidays, workSlots } from './store.js';
+import { transaction } from './db.js';
+import { holidays, replaceHolidays, saveSetting, workSlots } from './store.js';
+import { holidays as holidayTable } from './schema.js';
+import { readRoleLabels } from './role-labels.js';
 import { MIN_ALLOWED_DATE, MIN_ALLOWED_YEAR, markHolidayManual, syncYearHolidays } from './holiday-sync.js';
-import { holidayResetBody, holidaySettings, holidaySyncBody, slotSettings, yearQuery } from './validation.js';
 
-export function settingsRoutes(db: DatabaseSync) {
+export function settingsRoutes(db: CalendarDb) {
   const app = new Hono<Env>();
+  app.get('/settings/role-labels', c => c.json(readRoleLabels(db)));
+  app.put('/settings/role-labels', requireAdmin, async c => {
+    const labels = roleLabelsSchema.parse(await c.req.json());
+    saveSetting(db, 'roleLabels', JSON.stringify(labels));
+    return c.json(labels);
+  });
   app.get('/settings/work-slots', c => c.json({ slots: workSlots(db) }));
   app.put('/settings/work-slots', requireAdmin, async c => {
-    const input = slotSettings.parse(await c.req.json());
-    const slots = normalizeWorkSlots(input.slots);
-    if (new Set(slots.map(s => s.id)).size !== slots.length) throw new HTTPException(400, { message: '工作时段标识不得重复' });
-    if (slots.some((s, i) => s.startTime >= s.endTime || (i > 0 && s.startTime < slots[i - 1].endTime))) {
-      throw new HTTPException(400, { message: '工作时段必须有正时长且不得重叠' });
-    }
-    db.prepare("UPDATE settings SET value = ? WHERE key = 'workSlots'").run(JSON.stringify(slots));
+    const slots = validateWorkSlots(await c.req.json());
+    saveSetting(db, 'workSlots', JSON.stringify(slots));
     return c.json({ slots });
   });
   app.get('/settings/holidays', async c => {
     const { year } = yearQuery.parse(c.req.query());
-    const targetYear = year ?? Math.max(MIN_ALLOWED_YEAR, new Date().getFullYear());
+    const targetYear = year ?? Math.max(MIN_ALLOWED_YEAR, getCalendarYear());
     await syncYearHolidays(db, targetYear);
     return c.json({ holidays: holidays(db, year) });
+  });
+  app.put('/settings/holidays/:date', requireAdmin, async c => {
+    const date = calendarDate.parse(c.req.param('date'));
+    const fields = holidayFields.parse(await c.req.json());
+    transaction(db, db => {
+      db.insert(holidayTable).values({ date, ...fields })
+        .onConflictDoUpdate({ target: holidayTable.date, set: fields }).run();
+      markHolidayManual(db, Number(date.slice(0, 4)));
+    });
+    return c.json({ data: { date, ...fields }, code: 'OK', message: '' });
+  });
+  app.delete('/settings/holidays/:date', requireAdmin, c => {
+    const date = calendarDate.parse(c.req.param('date'));
+    transaction(db, db => {
+      db.delete(holidayTable).where(eq(holidayTable.date, date)).run();
+      markHolidayManual(db, Number(date.slice(0, 4)));
+    });
+    return c.json({ data: null, code: 'OK', message: '' });
   });
   app.put('/settings/holidays', requireAdmin, async c => {
     const input = holidaySettings.parse(await c.req.json());
@@ -34,13 +58,13 @@ export function settingsRoutes(db: DatabaseSync) {
     if (input.year !== undefined && dates.some(d => !d.startsWith(`${input.year}-`))) {
       throw new HTTPException(400, { message: '节假日日期必须属于指定年份' });
     }
-    replaceHolidays(db, input.holidays, input.year);
-    if (input.year !== undefined) {
-      markHolidayManual(db, input.year);
-    } else {
-      const touchedYears = new Set(input.holidays.map(h => Number(h.date.slice(0, 4))));
-      for (const y of touchedYears) markHolidayManual(db, y);
-    }
+    transaction(db, db => {
+      const touchedYears = input.year !== undefined ? [input.year] : new Set(
+        [...holidays(db), ...input.holidays].map(h => Number(h.date.slice(0, 4))),
+      );
+      replaceHolidays(db, input.holidays, input.year);
+      for (const year of touchedYears) markHolidayManual(db, year);
+    });
     return c.json({ holidays: holidays(db, input.year) });
   });
   app.post('/settings/holidays/sync', requireAdmin, async c => {
@@ -54,7 +78,7 @@ export function settingsRoutes(db: DatabaseSync) {
       }
     }
     const { year } = holidaySyncBody.parse(raw);
-    const targetYear = year ?? Math.max(MIN_ALLOWED_YEAR, new Date().getFullYear());
+    const targetYear = year ?? Math.max(MIN_ALLOWED_YEAR, getCalendarYear());
     const result = await syncYearHolidays(db, targetYear, { force: true });
     if (!result.updated) {
       throw new HTTPException(502, {
@@ -76,11 +100,18 @@ export function settingsRoutes(db: DatabaseSync) {
     const { year } = holidayResetBody.parse(raw);
     if (year !== undefined) {
       const defaultsForYear = DEFAULT_CN_HOLIDAYS.filter(h => h.date.startsWith(`${year}-`) && h.date >= MIN_ALLOWED_DATE);
-      replaceHolidays(db, defaultsForYear, year);
-      markHolidayManual(db, year);
+      transaction(db, db => {
+        replaceHolidays(db, defaultsForYear, year);
+        markHolidayManual(db, year);
+      });
       return c.json({ holidays: holidays(db, year) });
     }
-    replaceHolidays(db, DEFAULT_CN_HOLIDAYS.filter(h => h.date >= MIN_ALLOWED_DATE));
+    transaction(db, db => {
+      const defaults = DEFAULT_CN_HOLIDAYS.filter(h => h.date >= MIN_ALLOWED_DATE);
+      const touchedYears = new Set([...holidays(db), ...defaults].map(h => Number(h.date.slice(0, 4))));
+      replaceHolidays(db, defaults);
+      for (const touchedYear of touchedYears) markHolidayManual(db, touchedYear);
+    });
     return c.json({ holidays: holidays(db) });
   });
   return app;

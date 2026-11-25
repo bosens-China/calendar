@@ -1,23 +1,13 @@
-import type { DatabaseSync } from 'node:sqlite';
-import type { HolidayOverride } from '@calendar/shared';
-import { replaceHolidays } from './db.js';
-import { holidays } from './store.js';
+import type { CalendarDb } from './db.js';
+import { fetchYearHolidaysFromGithub, type HolidayOverride } from '@calendar/shared';
+import { transaction } from './db.js';
+import { getSetting, holidays, replaceHolidays, saveSetting } from './store.js';
 
 export const MIN_ALLOWED_YEAR = 2026;
 export const MIN_ALLOWED_DATE = '2026-01-01';
 
 const SYNC_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 10 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 5000;
-
-interface HolidayCnPayload {
-  year?: number;
-  days?: Array<{
-    name?: string;
-    date?: string;
-    isOffDay?: boolean;
-  }>;
-}
 
 interface HolidaySyncMeta {
   syncedAt?: string;
@@ -40,25 +30,21 @@ function syncMetaKey(year: number) {
   return `holiday_sync_${year}`;
 }
 
-function getSyncMeta(db: DatabaseSync, year: number): HolidaySyncMeta | null {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(syncMetaKey(year)) as
-    | { value: string }
-    | undefined;
-  if (!row) return null;
+function getSyncMeta(db: CalendarDb, year: number): HolidaySyncMeta | null {
+  const value = getSetting(db, syncMetaKey(year));
+  if (!value) return null;
   try {
-    return JSON.parse(row.value) as HolidaySyncMeta;
+    return JSON.parse(value) as HolidaySyncMeta;
   } catch {
     return null;
   }
 }
 
-function saveSyncMeta(db: DatabaseSync, year: number, meta: HolidaySyncMeta) {
-  db.prepare(
-    'INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-  ).run(syncMetaKey(year), JSON.stringify(meta));
+function saveSyncMeta(db: CalendarDb, year: number, meta: HolidaySyncMeta) {
+  saveSetting(db, syncMetaKey(year), JSON.stringify(meta));
 }
 
-export function markHolidayManual(db: DatabaseSync, year: number) {
+export function markHolidayManual(db: CalendarDb, year: number) {
   const prev = getSyncMeta(db, year) ?? {};
   saveSyncMeta(db, year, {
     ...prev,
@@ -68,59 +54,8 @@ export function markHolidayManual(db: DatabaseSync, year: number) {
   });
 }
 
-export async function fetchYearHolidaysFromGithub(year: number): Promise<HolidayOverride[]> {
-  const urls = [
-    `https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/${year}.json`,
-    `https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/${year}.json`,
-  ];
-
-  let lastError: Error | null = null;
-  for (const url of urls) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    try {
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) {
-        lastError = new Error(`HTTP ${res.status} from ${url}`);
-        continue;
-      }
-      const data = (await res.json()) as HolidayCnPayload;
-      if (!Array.isArray(data.days)) {
-        lastError = new Error(`Invalid holiday payload from ${url}`);
-        continue;
-      }
-      const seen = new Set<string>();
-      const mapped: HolidayOverride[] = [];
-      for (const day of data.days) {
-        if (
-          typeof day.date !== 'string' ||
-          !day.date.startsWith(`${year}-`) ||
-          day.date < MIN_ALLOWED_DATE ||
-          typeof day.name !== 'string' ||
-          typeof day.isOffDay !== 'boolean' ||
-          seen.has(day.date)
-        ) {
-          continue;
-        }
-        seen.add(day.date);
-        mapped.push({
-          date: day.date,
-          name: day.name.trim() || (day.isOffDay ? '节假日' : '调休补班'),
-          kind: day.isOffDay ? 'holiday' : 'workday',
-        });
-      }
-      return mapped;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastError ?? new Error(`无法从 GitHub 拉取 ${year} 年节假日数据`);
-}
-
 export async function syncYearHolidays(
-  db: DatabaseSync,
+  db: CalendarDb,
   year: number,
   options: { force?: boolean; fetcher?: (y: number) => Promise<HolidayOverride[]> } = {},
 ): Promise<HolidaySyncResult> {
@@ -161,22 +96,16 @@ export async function syncYearHolidays(
       const fetcher = options.fetcher ?? fetchYearHolidaysFromGithub;
       const remote = await fetcher(year);
       if (remote.length > 0) {
-        // Re-check manual edit guard right before writing to avoid race with concurrent admin PUT
-        if (!options.force && getSyncMeta(db, year)?.manual) {
-          return { year, holidays: holidays(db, year), source: 'cache', updated: false };
-        }
-        replaceHolidays(db, remote, year);
-        saveSyncMeta(db, year, {
-          syncedAt: new Date().toISOString(),
-          source: 'github:NateScarlet/holiday-cn',
-          manual: false,
+        return transaction(db, db => {
+          if (!options.force && getSyncMeta(db, year)?.manual) {
+            return { year, holidays: holidays(db, year), source: 'cache', updated: false };
+          }
+          replaceHolidays(db, remote, year);
+          saveSyncMeta(db, year, {
+            syncedAt: new Date().toISOString(), source: 'github:NateScarlet/holiday-cn', manual: false,
+          });
+          return { year, holidays: holidays(db, year), source: 'github', updated: true };
         });
-        return {
-          year,
-          holidays: holidays(db, year),
-          source: 'github',
-          updated: true,
-        };
       }
       saveSyncMeta(db, year, {
         ...(getSyncMeta(db, year) ?? {}),

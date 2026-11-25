@@ -1,0 +1,13 @@
+.git
+.github
+.env*
+node_modules
+**/node_modules
+**/dist
+**/dist-pages
+**/*.tsbuildinfo
+**/*.db*
+**/*.sqlite*
+packages/server/data
+playwright-report
+test-results

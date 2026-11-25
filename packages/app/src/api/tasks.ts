@@ -13,28 +13,26 @@ export interface TaskQueryParams {
   status?: string;
 }
 
-export async function getTasksApi(params?: TaskQueryParams): Promise<Task[]> {
-  const res = await request<{ tasks: Task[] } | Task[]>('/api/tasks', {
-    params: params as Record<string, string | undefined>,
+export async function getTasksApi(params?: TaskQueryParams, signal?: AbortSignal): Promise<Task[]> {
+  const list = await request<Task[]>('/api/tasks', {
+    params: { ...params }, signal,
   });
-  const list = (res as { tasks: Task[] }).tasks ?? res;
-  return Array.isArray(list) ? list : [];
+  if (!Array.isArray(list)) throw new Error('服务器返回的数据格式不正确');
+  return list;
 }
 
 export async function createTaskApi(data: CreateTaskRequest): Promise<Task> {
-  const res = await request<{ task: Task } | Task>('/api/tasks', {
+  return request<Task>('/api/tasks', {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  return ((res as { task: Task }).task ?? res) as Task;
 }
 
 export async function updateTaskApi(id: string, data: UpdateTaskRequest): Promise<Task> {
-  const res = await request<{ task: Task } | Task>(`/api/tasks/${id}`, {
+  return request<Task>(`/api/tasks/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
-  return ((res as { task: Task }).task ?? res) as Task;
 }
 
 export async function deleteTaskApi(id: string): Promise<void> {

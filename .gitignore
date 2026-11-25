@@ -2,10 +2,16 @@
 .DS_Store
 *.local
 *.log*
+.env
+.env.*
+!.env.example
 
 # Dist
 node_modules
 dist/
+dist-pages/
+playwright-report/
+test-results/
 *.tsbuildinfo
 
 # Server SQLite Data

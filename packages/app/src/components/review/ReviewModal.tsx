@@ -17,6 +17,7 @@ import {
 import { PeriodPicker } from '../canvas/PeriodPicker';
 import { generatePeriodMarkdownReport } from '../../utils/markdown';
 import { ModalDialog, Tabs } from '../ui/overlays';
+import { QueryError } from '../ui/QueryError';
 import { Badge, Button, cn, Spinner } from '../ui/primitives';
 
 interface Props {
@@ -41,9 +42,9 @@ export const ReviewModal: React.FC<Props> = ({ open, initialPeriod, initialDate,
   const startDate = clampDateMin(rawRange.startDate);
   const endDate = clampDateMin(rawRange.endDate);
 
-  const { data: summary, isLoading } = useQuery<PeriodSummaryResponse>({
+  const { data: summary, isLoading, isError, refetch } = useQuery<PeriodSummaryResponse>({
     queryKey: ['summary', startDate, endDate],
-    queryFn: () => summaryApi.getSummary({ startDate, endDate }),
+    queryFn: ({ signal }) => summaryApi.getSummary({ startDate, endDate }, signal),
     enabled: open,
   });
 
@@ -130,28 +131,30 @@ export const ReviewModal: React.FC<Props> = ({ open, initialPeriod, initialDate,
           </span>
         </div>
 
-        {isLoading || !summary ? (
+        {isError && <QueryError message={summary ? '复盘刷新失败，当前显示上次结果' : '无法加载复盘数据'} retry={() => void refetch()} />}
+        {isLoading && (
           <div className="py-16">
             <Spinner label="正在汇总统计数据..." />
           </div>
-        ) : (
+        )}
+        {summary && (
           <>
             {/* KPI Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3.5">
-                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">总应出勤</div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">应出勤工时</div>
                 <div className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                   {formatHours(summary.totalExpectedMinutes)}
                 </div>
               </div>
               <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3.5">
-                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">总已排工时</div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">已排工时</div>
                 <div className="mt-1 text-lg font-semibold text-blue-600 dark:text-blue-400">
                   {formatHours(summary.totalScheduledMinutes)}
                 </div>
               </div>
               <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3.5">
-                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">总空档工时</div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">空闲工时</div>
                 <div
                   className={cn(
                     'mt-1 text-lg font-semibold',
@@ -216,7 +219,7 @@ export const ReviewModal: React.FC<Props> = ({ open, initialPeriod, initialDate,
                             空档 {formatHours(m.gapMinutes)}
                           </Badge>
                         ) : (
-                          <Badge tone="green">满排</Badge>
+                          <Badge tone="green">已排满</Badge>
                         )}
                         <span className="font-semibold text-zinc-700 dark:text-zinc-300">
                           {Math.round(m.saturation * 100)}%

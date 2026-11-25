@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { CalendarDb } from './db.js';
 import type { Member } from '@calendar/shared';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import { jwtVerify, SignJWT } from 'jose';
-import { findById } from './store.js';
+import { eq } from 'drizzle-orm';
+import { members, settings } from './schema.js';
+import { getSetting, publicMember } from './store.js';
 
 export type Env = { Variables: { user: Member } };
 
@@ -12,27 +14,21 @@ function passwordFingerprint(passwordHash: string): string {
   return createHash('sha256').update(passwordHash).digest('hex').slice(0, 16);
 }
 
-function getJwtSecret(db: DatabaseSync): Uint8Array {
+function getJwtSecret(db: CalendarDb): Uint8Array {
   if (process.env.JWT_SECRET && process.env.JWT_SECRET.trim().length > 0) {
     return new TextEncoder().encode(process.env.JWT_SECRET);
   }
-  const existing = db
-    .prepare("SELECT value FROM settings WHERE key = 'jwtSecret'")
-    .get() as { value: string } | undefined;
-  if (existing?.value) {
-    return new TextEncoder().encode(existing.value);
+  let secret = getSetting(db, 'jwtSecret');
+  if (!secret) {
+    db.insert(settings).values({ key: 'jwtSecret', value: randomBytes(32).toString('hex') })
+      .onConflictDoNothing().run();
+    secret = getSetting(db, 'jwtSecret');
   }
-  const generated = randomBytes(32).toString('hex');
-  db.prepare(
-    "INSERT INTO settings(key, value) VALUES ('jwtSecret', ?) ON CONFLICT(key) DO NOTHING",
-  ).run(generated);
-  const stored = db
-    .prepare("SELECT value FROM settings WHERE key = 'jwtSecret'")
-    .get() as { value: string };
-  return new TextEncoder().encode(stored.value);
+  if (!secret) throw new Error('登录签名密钥未初始化');
+  return new TextEncoder().encode(secret);
 }
 
-export function issueToken(db: DatabaseSync, memberId: string, passwordHash: string) {
+export function issueToken(db: CalendarDb, memberId: string, passwordHash: string) {
   return new SignJWT({ ver: passwordFingerprint(passwordHash) })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(memberId)
@@ -41,7 +37,7 @@ export function issueToken(db: DatabaseSync, memberId: string, passwordHash: str
     .sign(getJwtSecret(db));
 }
 
-export const requireAuth = (db: DatabaseSync) =>
+export const requireAuth = (db: CalendarDb) =>
   createMiddleware<Env>(async (c, next) => {
     const token = /^Bearer (\S+)$/i.exec(c.req.header('Authorization') ?? '')?.[1];
     if (!token) throw new HTTPException(401, { message: '请先登录' });
@@ -57,23 +53,11 @@ export const requireAuth = (db: DatabaseSync) =>
     } catch {
       throw new HTTPException(401, { message: '登录凭证无效或已过期' });
     }
-    const authRow = id
-      ? (db
-          .prepare('SELECT passwordHash, active FROM members WHERE id = ?')
-          .get(id) as { passwordHash: string; active: number } | undefined)
-      : undefined;
-    if (
-      !id ||
-      !authRow ||
-      !authRow.active ||
-      typeof ver !== 'string' ||
-      ver !== passwordFingerprint(String(authRow.passwordHash))
-    ) {
+    const authRow = id ? db.select().from(members).where(eq(members.id, id)).get() : undefined;
+    if (!authRow?.active || typeof ver !== 'string' || ver !== passwordFingerprint(authRow.passwordHash)) {
       throw new HTTPException(401, { message: '登录凭证已失效，请重新登录' });
     }
-    const user = findById(db, 'members', id);
-    if (!user || !user.active) throw new HTTPException(401, { message: '账号不可用' });
-    c.set('user', user);
+    c.set('user', publicMember(authRow));
     await next();
   });
 

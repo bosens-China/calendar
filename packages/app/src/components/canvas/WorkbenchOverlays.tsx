@@ -2,6 +2,7 @@ import React from 'react';
 import { ProjectsView } from '../../views/ProjectsView';
 import { MembersView } from '../../views/MembersView';
 import { SettingsView } from '../../views/SettingsView';
+import { LOCAL_MODE } from '../../api';
 import { ModalDialog, SideSheet } from '../ui/overlays';
 
 export const ProjectsModal: React.FC<{ open: boolean; onClose: () => void }> = ({
@@ -26,8 +27,8 @@ export const MembersModal: React.FC<{ open: boolean; onClose: () => void }> = ({
   <ModalDialog
     open={open}
     onOpenChange={(v) => !v && onClose()}
-    title="人员管理"
-    description="创建成员自动分配不重复配色，配置邮箱可支持自助找回密码。"
+    title={LOCAL_MODE ? '排期人员' : '人员管理'}
+    description={LOCAL_MODE ? "添加需要排期的成员，无需创建登录账号。" : "邀请成员加入团队，分配权限角色。"}
     maxWidthClass="max-w-4xl"
   >
     <MembersView />

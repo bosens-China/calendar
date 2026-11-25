@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
+import { LOCAL_MODE } from '../api';
+import { readLocal, writeLocal } from '../api/local/store';
 
 export type ThemePreference = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
@@ -15,9 +18,13 @@ function resolvePreference(pref: ThemePreference): ResolvedTheme {
 }
 
 function readInitialPreference(): ThemePreference {
-  if (typeof window === 'undefined') return 'auto';
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-  if (saved === 'auto' || saved === 'light' || saved === 'dark') return saved;
+  if (typeof window === 'undefined' || LOCAL_MODE) return 'auto';
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (saved === 'auto' || saved === 'light' || saved === 'dark') return saved;
+  } catch {
+    return 'auto';
+  }
   return 'auto';
 }
 
@@ -34,6 +41,7 @@ interface ThemeState {
   cycleTheme: () => void;
 }
 
+let preferenceChanged = false;
 const initialPref = readInitialPreference();
 const initialResolved = resolvePreference(initialPref);
 applyThemeToDom(initialResolved);
@@ -42,7 +50,17 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: initialPref,
   resolvedTheme: initialResolved,
   setTheme: (theme) => {
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    preferenceChanged = true;
+    if (LOCAL_MODE) {
+      void writeLocal(state => { state.theme = theme; })
+        .catch(() => toast.error('无法保存本机主题偏好'));
+    } else {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, theme);
+      } catch {
+        toast.error('无法保存主题偏好');
+      }
+    }
     const resolved = resolvePreference(theme);
     applyThemeToDom(resolved);
     set({ theme, resolvedTheme: resolved });
@@ -53,6 +71,15 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     get().setTheme(order[(idx + 1) % order.length]);
   },
 }));
+
+if (LOCAL_MODE) {
+  void readLocal(state => state.theme).then(theme => {
+    if (!theme || preferenceChanged) return;
+    const resolvedTheme = resolvePreference(theme);
+    applyThemeToDom(resolvedTheme);
+    useThemeStore.setState({ theme, resolvedTheme });
+  }).catch(() => {}); // App startup reports and retries IndexedDB failures.
+}
 
 if (typeof window !== 'undefined' && window.matchMedia) {
   const mql = window.matchMedia('(prefers-color-scheme: dark)');

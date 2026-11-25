@@ -1,4 +1,4 @@
-import { request, setToken } from './client';
+import { request } from './client';
 import type {
   ChangePasswordRequest,
   ForgotPasswordRequest,
@@ -8,19 +8,16 @@ import type {
 } from '@calendar/shared';
 
 export async function loginApi(data: LoginRequest): Promise<LoginResponse> {
-  const res = await request<LoginResponse | { token: string; user?: Member }>('/api/auth/login', {
+  return request<LoginResponse>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify(data),
+    authenticate: false,
   });
-  if (res.token) {
-    setToken(res.token);
-  }
-  return res as LoginResponse;
 }
 
 export async function getMeApi(): Promise<Member> {
-  const res = await request<{ user: Member } | Member>('/api/auth/me');
-  return ((res as { user: Member }).user ?? res) as Member;
+  const { user } = await request<{ user: Member }>('/api/auth/me');
+  return user;
 }
 
 export async function changePasswordApi(data: ChangePasswordRequest): Promise<{ ok: boolean }> {
@@ -34,6 +31,7 @@ export async function forgotPasswordApi(data: ForgotPasswordRequest): Promise<{ 
   return request<{ ok: boolean }>('/api/auth/forgot-password', {
     method: 'POST',
     body: JSON.stringify(data),
+    authenticate: false,
   });
 }
 

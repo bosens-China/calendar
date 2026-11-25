@@ -1,7 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { CalendarOff, MoreHorizontal, Plus, UserPlus } from 'lucide-react';
+import { MoreHorizontal, UserPlus } from 'lucide-react';
 import type {
-  DaySlotCoverage,
   HolidayOverride,
   Leave,
   Member,
@@ -10,21 +9,25 @@ import type {
   Task,
   WorkSlot,
 } from '@calendar/shared';
-import { computeMemberDaySchedule, formatHours, isWorkday } from '@calendar/shared';
+import { formatHours, getCalendarDate, isWorkday } from '@calendar/shared';
 import { useAuthStore } from '../../store/authStore';
 import { useUiStore } from '../../store/uiStore';
 import { dayjs, SHORT_WEEKDAY_NAMES_ZH } from '../../utils/date';
-import { LEAVE_TYPE_CONFIG } from '../../utils/scheduleHelper';
-import { PopoverCard } from '../ui/overlays';
 import { cn } from '../ui/primitives';
+import type { ScheduleRow } from './scheduleRows';
+import { TraditionalCalendar } from './TraditionalCalendar';
+import { DaySchedulePopover } from './DaySchedulePopover';
+import { ScheduleDayCell } from './ScheduleDayCell';
+import type { ScheduleDayActions } from './scheduleDay';
+import { LOCAL_MODE } from '../../api';
 
 interface Props {
   period: 'week' | 'month';
   dates: string[];
-  members: Member[];
+  rows: ScheduleRow[];
+  visibleProjectIds: string[];
   projects: Project[];
   tasks: Task[];
-  leaves: Leave[];
   workSlots: WorkSlot[];
   holidayMap: Map<string, HolidayOverride>;
   onTaskClick: (task: Task) => void;
@@ -43,43 +46,15 @@ interface Props {
   onOpenMembers: () => void;
 }
 
-interface MergedDayTask {
-  task: Task;
-  totalMinutes: number;
-  slotLabels: string[];
-}
-
 const Y_AXIS_WIDTH = 176;
-
-function mergeDayTasks(day: MemberDaySchedule): MergedDayTask[] {
-  const map = new Map<string, MergedDayTask>();
-  for (const slotCov of day.slots) {
-    for (const seg of slotCov.segments) {
-      const prev = map.get(seg.task.id);
-      if (prev) {
-        prev.totalMinutes += seg.durationMinutes;
-        if (!prev.slotLabels.includes(slotCov.slot.label)) {
-          prev.slotLabels.push(slotCov.slot.label);
-        }
-      } else {
-        map.set(seg.task.id, {
-          task: seg.task,
-          totalMinutes: seg.durationMinutes,
-          slotLabels: [slotCov.slot.label],
-        });
-      }
-    }
-  }
-  return Array.from(map.values());
-}
 
 export const ScheduleCanvas: React.FC<Props> = ({
   period,
   dates,
-  members,
+  rows,
+  visibleProjectIds,
   projects,
   tasks,
-  leaves,
   workSlots,
   holidayMap,
   onTaskClick,
@@ -89,9 +64,9 @@ export const ScheduleCanvas: React.FC<Props> = ({
   onOpenMembers,
 }) => {
   const { user } = useAuthStore();
-  const { onlyGap, hideNonWorkdays } = useUiStore();
+  const { calendarLayout, hideNonWorkdays } = useUiStore();
   const isAdmin = user?.role === 'admin';
-  const todayStr = dayjs().format('YYYY-MM-DD');
+  const todayStr = getCalendarDate();
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const panRef = useRef({
@@ -103,7 +78,6 @@ export const ScheduleCanvas: React.FC<Props> = ({
     moved: false,
   });
   const [isPanning, setIsPanning] = useState(false);
-  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
@@ -111,41 +85,6 @@ export const ScheduleCanvas: React.FC<Props> = ({
     if (!hideNonWorkdays) return dates;
     return dates.filter((d) => isWorkday(d, holidayMap));
   }, [dates, hideNonWorkdays, holidayMap]);
-
-  const rows = useMemo(() => {
-    const computed = members.map((member) => {
-      const dayMap = new Map<string, MemberDaySchedule>();
-      let expected = 0;
-      let scheduled = 0;
-      let gap = 0;
-
-      for (const date of displayDates) {
-        const day = computeMemberDaySchedule({
-          date,
-          memberId: member.id,
-          tasks,
-          leaves,
-          workSlots,
-          holidayMap,
-        });
-        dayMap.set(date, day);
-        expected += day.expectedMinutes;
-        scheduled += day.scheduledMinutes;
-        gap += day.gapMinutes;
-      }
-
-      return {
-        member,
-        dayMap,
-        expected,
-        scheduled,
-        gap,
-        saturation: expected > 0 ? Math.min(1, scheduled / expected) : 1,
-      };
-    });
-
-    return onlyGap ? computed.filter((r) => r.gap > 0) : computed;
-  }, [members, displayDates, tasks, leaves, workSlots, holidayMap, onlyGap]);
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.button !== 1) return;
@@ -185,38 +124,18 @@ export const ScheduleCanvas: React.FC<Props> = ({
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDropOnDay = (
-    e: React.DragEvent,
-    memberId: string,
-    date: string,
-    slot?: WorkSlot,
-  ) => {
-    e.preventDefault();
-    setDragOverKey(null);
+  const handleDropOnDay = (event: React.DragEvent, memberId: string, date: string) => {
+    event.preventDefault();
     if (!isAdmin) return;
-    const taskId = e.dataTransfer.getData('text/plain');
-    if (!taskId) return;
-    const original = tasks.find((t) => t.id === taskId);
-    const firstSlot = workSlots[0];
-    const lastSlot = workSlots[workSlots.length - 1];
-    if (original) {
-      const spanDays = Math.max(0, dayjs(original.endDate).diff(dayjs(original.startDate), 'day'));
-      const newEndDate = dayjs(date).add(spanDays, 'day').format('YYYY-MM-DD');
-      onMoveTask(taskId, {
-        assigneeId: memberId,
-        startDate: date,
-        endDate: newEndDate,
-        startTime: slot ? slot.startTime : original.startTime,
-        endTime: slot ? slot.endTime : original.endTime,
-      });
-      return;
-    }
-    onMoveTask(taskId, {
+    const task = tasks.find(item => item.id === event.dataTransfer.getData('text/plain'));
+    if (!task) return;
+    const spanDays = Math.max(0, dayjs(task.endDate).diff(dayjs(task.startDate), 'day'));
+    onMoveTask(task.id, {
       assigneeId: memberId,
       startDate: date,
-      endDate: date,
-      startTime: slot ? slot.startTime : firstSlot?.startTime || '09:00',
-      endTime: slot ? slot.endTime : lastSlot?.endTime || '18:00',
+      endDate: dayjs(date).add(spanDays, 'day').format('YYYY-MM-DD'),
+      startTime: task.startTime,
+      endTime: task.endTime,
     });
   };
 
@@ -231,100 +150,24 @@ export const ScheduleCanvas: React.FC<Props> = ({
     return `${Y_AXIS_WIDTH}px ${cols.join(' ')}`;
   }, [period, displayDates, holidayMap]);
 
-  const renderMonthPopover = (day: MemberDaySchedule, member: Member) => {
-    const memberColor = member.avatarColor || '#2563eb';
-    const mergedTasks = mergeDayTasks(day);
-    const gapSlots = day.slots.filter((s) => s.gapMinutes > 0);
-
-    return (
-      <div className="w-60 space-y-2.5">
-        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: memberColor }} />
-            <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-              {member.name}
-            </span>
-          </div>
-          <span className="text-[11px] text-zinc-400">{day.date}</span>
-        </div>
-
-        {day.leaves.length > 0 && (
-          <div className="space-y-1">
-            {day.leaves.map((lv) => (
-              <button
-                key={lv.id}
-                type="button"
-                onClick={() => onLeaveClick(lv)}
-                className="flex w-full items-center justify-between rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1.5 text-left text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200/70 dark:hover:bg-zinc-700 cursor-pointer"
-              >
-                <span className="flex items-center gap-1.5">
-                  <CalendarOff className="h-3 w-3" />
-                  {LEAVE_TYPE_CONFIG[lv.type]?.label || '请假'}
-                </span>
-                <span className="text-[10px] text-zinc-400">
-                  {lv.startTime}-{lv.endTime}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {mergedTasks.length > 0 && (
-          <div className="space-y-1.5">
-            {mergedTasks.map(({ task, totalMinutes, slotLabels }) => {
-              const proj = projectMap.get(task.projectId);
-              return (
-                <button
-                  key={task.id}
-                  type="button"
-                  onClick={() => onTaskClick(task)}
-                  className="flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:brightness-95 cursor-pointer"
-                  style={{
-                    backgroundColor: `${memberColor}1c`,
-                    borderLeft: `3px solid ${memberColor}`,
-                  }}
-                >
-                  <span className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
-                    {task.title}
-                  </span>
-                  <span className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
-                    <span>{proj?.name || '未分类'}</span>
-                    <span>
-                      {slotLabels.length >= workSlots.length ? '全天' : slotLabels.join('/')} ·{' '}
-                      {formatHours(totalMinutes)}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {gapSlots.length > 0 && (
-          <div className="space-y-1">
-            {gapSlots.map((gs) => (
-              <button
-                key={gs.slot.id}
-                type="button"
-                onClick={() => onSlotClick(member.id, day.date, gs.slot)}
-                className={cn(
-                  'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors',
-                  day.fillStatus === 'empty'
-                    ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25'
-                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400 dark:hover:bg-amber-500/25',
-                )}
-              >
-                <span>
-                  {gs.slot.label}空余 {formatHours(gs.gapMinutes)}
-                </span>
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
+  const dayActions: ScheduleDayActions = {
+    visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick,
   };
+  const renderDay = (day: MemberDaySchedule, member: Member) =>
+    <DaySchedulePopover {...dayActions} day={day} member={member} />;
+
+  if (calendarLayout === 'calendar') {
+    return (
+      <TraditionalCalendar
+        dates={dates}
+        rows={rows}
+        holidayMap={holidayMap}
+        today={todayStr}
+        hideNonWorkdays={hideNonWorkdays}
+        renderDay={renderDay}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-1 min-h-0 flex-col bg-white dark:bg-zinc-950">
@@ -480,232 +323,13 @@ export const ScheduleCanvas: React.FC<Props> = ({
                   </div>
                 </div>
 
-                {/* Date Cells */}
-                {displayDates.map((dateStr) => {
-                  const daySched = dayMap.get(dateStr);
-                  const workday = daySched?.isWorkday ?? false;
-                  const isToday = dateStr === todayStr;
-
-                  if (!workday) {
-                    return (
-                      <div
-                        key={`${member.id}-${dateStr}`}
-                        className={cn(
-                          'flex items-center justify-center border-b border-r border-zinc-100 dark:border-zinc-800/60 bg-zinc-100/65 dark:bg-zinc-900/45 text-[11px] text-zinc-400/80 dark:text-zinc-600 whitespace-nowrap',
-                          period === 'week' ? 'min-h-[96px]' : 'min-h-[60px]',
-                        )}
-                      >
-                        {period === 'week' ? '休' : ''}
-                      </div>
-                    );
-                  }
-
-                  if (period === 'week') {
-                    const cellKey = `${member.id}-${dateStr}`;
-                    const isDrop = dragOverKey === cellKey;
-                    const mergedTasks = daySched ? mergeDayTasks(daySched) : [];
-                    const gapSlots = (daySched?.slots || []).filter(
-                      (s: DaySlotCoverage) => s.gapMinutes > 0,
-                    );
-                    const isFullEmpty = daySched?.fillStatus === 'empty';
-
-                    return (
-                      <div
-                        key={cellKey}
-                        onDragOver={(e) => {
-                          if (!isAdmin) return;
-                          e.preventDefault();
-                          setDragOverKey(cellKey);
-                        }}
-                        onDragLeave={() => setDragOverKey(null)}
-                        onDrop={(e) => handleDropOnDay(e, member.id, dateStr)}
-                        className={cn(
-                          'group/cell flex flex-col gap-1.5 border-b border-r border-zinc-100 dark:border-zinc-800/70 p-2 min-h-[96px] transition-colors',
-                          isDrop
-                            ? 'bg-blue-50/70 dark:bg-blue-500/15'
-                            : isToday
-                              ? 'bg-blue-50/15 dark:bg-blue-500/[0.04]'
-                              : 'bg-white dark:bg-zinc-950',
-                        )}
-                      >
-                        {daySched?.leaves.map((lv) => (
-                          <div
-                            key={lv.id}
-                            data-interactive="true"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onLeaveClick(lv);
-                            }}
-                            className="flex items-center justify-between gap-2 rounded-lg bg-zinc-100/90 dark:bg-zinc-800/90 px-2.5 py-1.5 text-xs text-zinc-600 dark:text-zinc-300 transition-colors hover:bg-zinc-200/70 dark:hover:bg-zinc-700/80 cursor-pointer"
-                          >
-                            <span className="flex items-center gap-1.5 font-medium truncate">
-                              <CalendarOff className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                              {LEAVE_TYPE_CONFIG[lv.type]?.label || '请假'}
-                            </span>
-                            <span className="shrink-0 text-[10px] text-zinc-400">
-                              {lv.startTime}-{lv.endTime}
-                            </span>
-                          </div>
-                        ))}
-
-                        {mergedTasks.map(({ task, totalMinutes, slotLabels }) => {
-                          const proj = projectMap.get(task.projectId);
-                          const isFullDay = slotLabels.length >= workSlots.length;
-                          return (
-                            <div
-                              key={task.id}
-                              data-interactive="true"
-                              draggable={isAdmin}
-                              onDragStart={(e) => handleDragStart(e, task)}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onTaskClick(task);
-                              }}
-                              className={cn(
-                                'flex flex-col gap-1 rounded-lg px-2.5 py-2 transition-all hover:shadow-xs',
-                                isAdmin ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
-                              )}
-                              style={{
-                                backgroundColor: `${memberColor}18`,
-                                borderLeft: `3px solid ${memberColor}`,
-                              }}
-                            >
-                              <div
-                                className="text-xs font-medium text-zinc-900 dark:text-zinc-100 leading-snug line-clamp-2"
-                                title={task.title}
-                              >
-                                {task.title}
-                              </div>
-                              <div className="flex items-center justify-between gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                                <span className="flex items-center gap-1 truncate">
-                                  <span
-                                    className="h-1.5 w-1.5 shrink-0 rounded-full"
-                                    style={{ backgroundColor: proj?.color || '#71717a' }}
-                                  />
-                                  <span className="truncate">{proj?.name || '未分类'}</span>
-                                </span>
-                                <span className="shrink-0 text-zinc-400 dark:text-zinc-500">
-                                  {isFullDay ? '全天' : slotLabels.join('/')} ·{' '}
-                                  {formatHours(totalMinutes)}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {isFullEmpty ? (
-                          <button
-                            type="button"
-                            data-interactive="true"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (panRef.current.moved) return;
-                              onSlotClick(member.id, dateStr);
-                            }}
-                            className="flex flex-1 min-h-[44px] items-center justify-center gap-1 rounded-lg bg-rose-50/75 text-[11px] font-medium text-rose-500 transition-colors hover:bg-rose-100/80 hover:text-rose-600 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 cursor-pointer"
-                          >
-                            <span>全天空档</span>
-                            <Plus className="h-3 w-3 opacity-0 transition-opacity group-hover/cell:opacity-100" />
-                          </button>
-                        ) : (
-                          gapSlots.map((gs) => (
-                            <button
-                              key={gs.slot.id}
-                              type="button"
-                              data-interactive="true"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (panRef.current.moved) return;
-                                onSlotClick(member.id, dateStr, gs.slot);
-                              }}
-                              className="flex items-center justify-between rounded-lg bg-amber-50/85 px-2.5 py-1.5 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-100/80 dark:bg-amber-500/12 dark:text-amber-400 dark:hover:bg-amber-500/20 cursor-pointer"
-                            >
-                              <span>
-                                {gs.slot.label}空余 {formatHours(gs.gapMinutes)}
-                              </span>
-                              <Plus className="h-3 w-3 opacity-60" />
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    );
-                  }
-
-                  // Month View
-                  const fillStatus = daySched?.fillStatus ?? 'empty';
-                  const cellKey = `${member.id}-${dateStr}`;
-                  const isDrop = dragOverKey === cellKey;
-                  const satPct = Math.round((daySched?.saturation ?? 0) * 100);
-
-                  return (
-                    <div
-                      key={cellKey}
-                      onDragOver={(e) => {
-                        if (!isAdmin) return;
-                        e.preventDefault();
-                        setDragOverKey(cellKey);
-                      }}
-                      onDragLeave={() => setDragOverKey(null)}
-                      onDrop={(e) => handleDropOnDay(e, member.id, dateStr)}
-                      className={cn(
-                        'flex items-center justify-center border-b border-r border-zinc-100 dark:border-zinc-800/60 p-1.5 min-h-[60px]',
-                        isDrop
-                          ? 'bg-blue-50 dark:bg-blue-500/15'
-                          : isToday
-                            ? 'bg-blue-50/15 dark:bg-blue-500/[0.04]'
-                            : 'bg-white dark:bg-zinc-950',
-                      )}
-                    >
-                      <PopoverCard
-                        trigger={
-                          <button
-                            type="button"
-                            data-interactive="true"
-                            className={cn(
-                              'relative flex h-9 w-full overflow-hidden rounded-lg border transition-transform hover:scale-105 cursor-pointer',
-                              fillStatus === 'empty' &&
-                                'bg-rose-50 border-rose-200 text-rose-600 dark:bg-rose-500/15 dark:border-rose-500/30 dark:text-rose-400',
-                              fillStatus === 'partial' &&
-                                'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/15 dark:border-amber-500/30 dark:text-amber-400',
-                              fillStatus === 'on_leave' &&
-                                'bg-zinc-100 border-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400',
-                            )}
-                            style={
-                              fillStatus === 'full'
-                                ? {
-                                    backgroundColor: `${memberColor}24`,
-                                    borderColor: `${memberColor}55`,
-                                    color: memberColor,
-                                  }
-                                : undefined
-                            }
-                          >
-                            {fillStatus === 'partial' && (
-                              <span
-                                className="h-full shrink-0"
-                                style={{
-                                  width: `${Math.max(25, Math.min(75, satPct))}%`,
-                                  backgroundColor: `${memberColor}38`,
-                                }}
-                              />
-                            )}
-                            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold">
-                              {fillStatus === 'full'
-                                ? '●'
-                                : fillStatus === 'empty'
-                                  ? '空'
-                                  : fillStatus === 'on_leave'
-                                    ? '假'
-                                    : `${satPct}%`}
-                            </span>
-                          </button>
-                        }
-                      >
-                        {daySched && renderMonthPopover(daySched, member)}
-                      </PopoverCard>
-                    </div>
-                  );
-                })}
+                {displayDates.map(date => (
+                  <ScheduleDayCell key={date} dateStr={date} period={period} member={member}
+                    daySched={dayMap.get(date)} isToday={date === todayStr} isAdmin={isAdmin}
+                    actions={dayActions} didPan={() => panRef.current.moved}
+                    handleDragStart={handleDragStart} handleDropOnDay={handleDropOnDay}
+                  />
+                ))}
               </React.Fragment>
             );
           })}
@@ -721,7 +345,7 @@ export const ScheduleCanvas: React.FC<Props> = ({
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-200 cursor-pointer"
                 >
                   <UserPlus className="h-3.5 w-3.5" />
-                  添加成员
+                  {LOCAL_MODE ? '添加排期人员' : '邀请成员'}
                 </button>
               </div>
               <div

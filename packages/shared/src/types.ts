@@ -1,4 +1,18 @@
 export type UserRole = 'admin' | 'member';
+export type RoleLabels = Record<UserRole, string>;
+export const DEFAULT_ROLE_LABELS: RoleLabels = { admin: '管理员', member: '成员' };
+
+export interface InvitationDetails {
+  username: string;
+  name: string;
+  roleLabel: string;
+  expiresAt: string;
+}
+
+export interface InvitationLink {
+  token: string;
+  expiresAt: string;
+}
 
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'delayed';
 
@@ -17,6 +31,7 @@ export interface Member {
   title: string;
   avatarColor: string;
   active: boolean;
+  pendingInvitation?: boolean;
   createdAt: string;
   updatedAt: string;
 }

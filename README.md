@@ -1,65 +1,74 @@
 # Calendar · 团队排期画布
 
-面向团队管理者与成员的极简 **XY 排期画布与任务管理工具**。在一个全屏画布中直观掌握每位成员的周/月排期、空档缺口与多项目投入，支持自定义工作时段、自动同步中国法定节假日、请假登记与周/月复盘导出。
+按周或月查看团队任务、请假和空档。可以在资源时间轴和传统日历之间切换，按项目和成员筛选，并复制 Markdown 复盘。
 
-## 核心特性
+## 选择使用方式
 
-- **极简全屏 XY 画布**：X 轴为时间（周视图周一至周日 / 月视图 1 号至月底），Y 轴为成员；支持触控板双指自由滑动与鼠标拖拽平移画布。
-- **无缝排期与空档可视化**：成员自动分配不重复专属色；工作日自动跳过午休与休假日，全天空档以浅红标示、当天未排满以浅黄标示、请假以浅灰区分，管理员支持拖拽任务重排。
-- **多项目扁平管理**：默认扁平展示全部项目，支持按项目多选筛选；项目管理、人员管理、复盘与设置全部原地弹层完成，零页面跳转。
-- **GitHub 节假日自动同步**：对接 `NateScarlet/holiday-cn` 按年自动拉取并持久化缓存（支持 2026 年及以后），跨年自动更新且完整留存历史年份记录。
-- **权限隔离与轻量协同**：支持账号密码登录与账号+邮箱找回密码；管理员统筹全局，普通成员仅查看和微调自己的任务并自助登记请假。
-- **周/月复盘报告**：自动统计应出勤、已排工时、饱和度及具体空闲日期/时段明细，支持一键复制 Markdown 周报/月报。
-- **护眼浅色 / 深色 / 跟随系统主题**：内置 `Auto / Light / Dark` 三态主题切换，浅色模式采用低眩光护眼暖灰画布。
+| 方式 | 适合谁 | 数据位置 |
+| --- | --- | --- |
+| GitHub Pages 个人版 | 一个人负责全团队排期，即开即用 | 当前站点和当前浏览器的 IndexedDB |
+| Docker Hub 团队版 | 团队成员分别登录并管理自己的任务和请假 | 自己部署的服务及 SQLite 数据卷 |
 
-## 技术栈
+### GitHub Pages 个人版
 
-- **前端**：Vite 6 + React 19 + React Compiler (`babel-plugin-react-compiler`) + TypeScript + Tailwind CSS v4 + Radix UI + TanStack Query + Zustand + ahooks + Day.js
-- **后端**：Hono + `@hono/node-server` + Node 24 原生 `node:sqlite` + Zod + jose (JWT) + bcryptjs
-- **工程化**：pnpm Monorepo（`@calendar/shared` / `@calendar/server` / `@calendar/app`）+ ESLint（含 `eslint-plugin-react-compiler`）
+发布后打开 [在线工作台](https://bosens-china.github.io/calendar/) 即可使用。一人在当前浏览器管理排期名单，无需登录。换浏览器、设备或站点域名会打开另一份工作台。清除该站点的浏览器数据会清除排期。
 
-## 快速开始
+首次打开后可以直接使用内置节假日。在系统设置中也可以手动从 GitHub 导入某一年的公开节假日数据。
 
-环境要求：Node.js `>= 22.13`（推荐 `24.x`）、`pnpm >= 10`
+### Docker Hub 团队版
+
+团队版镜像为 `boses/calendar:latest`。将仓库里的 `compose.yaml` 和 `.env.example` 保存到部署目录。把示例复制为 `.env`，填写初始管理员密码后启动。
 
 ```bash
-# 1. 安装依赖
-pnpm install
+cp .env.example .env
+# 编辑 .env，填写 ADMIN_INIT_PASSWORD
+docker compose up -d
+```
 
-# 2. 构建共享包
+默认在本机的 `http://localhost:3001` 提供工作台和 API。用 `admin` 和初始密码登录。进入「人员管理 → 邀请成员」，填写登录账号、姓名和权限角色，再生成并发送邀请链接。被邀请者打开链接，只需设置密码即可加入。链接 48 小时内有效，仅能使用一次。成员可在设置中修改自己的姓名，管理员可调整角色显示名称。数据库和签名密钥位于 `calendar-data` 卷，更新镜像时保留该卷。
+
+| 配置 | 用途 |
+| --- | --- |
+| `CALENDAR_IMAGE` | 镜像及标签，示例已填入 `boses/calendar:latest` |
+| `ADMIN_INIT_PASSWORD` | 新建数据库时必填，至少 12 个字符且最多 72 字节 |
+| `ADMIN_INIT_EMAIL` | 可选的初始管理员邮箱 |
+| `CALENDAR_HOST` / `CALENDAR_PORT` | 宿主机监听地址和端口，默认 `127.0.0.1:3001` |
+| `JWT_SECRET` | 可选的固定签名密钥，留空时生成并保存到数据库 |
+
+已有数据库启动时会通过 Drizzle 迁移，保留原有账号、排期和设置。更新初始化变量只影响新数据库。团队远程访问时，可在服务前配置 HTTPS 反向代理。接口说明位于 `/api/docs`，机器可读契约位于 `/api/openapi.json`。
+
+### 发布设置
+
+- GitHub Pages 的发布来源设为 **GitHub Actions**。推送 `main` 并通过验证后，工作流发布 IndexedDB 版。
+- 在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 将变量 `DOCKERHUB_USERNAME` 设为 `boses`，并添加有推送权限的密钥 `DOCKERHUB_TOKEN`。工作流默认发布 `boses/calendar`，有需要时可用变量 `DOCKERHUB_IMAGE` 指定其他镜像。
+- 验证通过后，`main` 发布 `latest`，版本标签 `vX.Y.Z` 发布对应版本。镜像支持 Linux amd64 和 arm64。
+
+## 本地开发
+
+需要 Node.js 24 和 pnpm 11。
+
+```bash
+pnpm install --frozen-lockfile
 pnpm --filter @calendar/shared build
-
-# 3. 同时启动前后端开发服务
-pnpm dev
+pnpm dev:pages
 ```
 
-启动后访问 `http://localhost:5173`（后端 API 监听 `http://localhost:3001`）。
-
-- 首次启动会自动初始化本地 SQLite 数据库并注入默认演示数据（4 名成员、3 个项目、本周排期与请假示例）。
-- 默认管理员账号：`admin` / `admin123`（绑定邮箱 `admin@calendar.local`）。
-- 演示成员账号：`linqing` / `chenmo` / `suwan`（密码均为 `123456`）。
-
-## 常用脚本
+开发团队版时，用 `ADMIN_INIT_PASSWORD='replace-with-your-own-password' pnpm dev` 启动 Vite 和 API。前端默认监听 5173，API 默认监听 3001。
 
 ```bash
-pnpm dev        # 并行启动前端与后端
-pnpm build      # 全量构建 shared / server / app
-pnpm typecheck  # 全量 TypeScript 类型检查
-pnpm lint       # ESLint + React Compiler 静态规则检查
-pnpm test       # 运行排期引擎单测与后端集成测试
+pnpm build
+pnpm build:pages
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
-## 目录结构
+- `packages/shared` 提供排期计算、类型、输入校验和节假日数据。
+- `packages/server` 提供 Hono API、团队账号、静态站点，以及基于 Drizzle 的 SQLite 存储。
+- `packages/app` 提供 React 界面和两种部署的数据接入。
 
-```text
-├── docs/PRD.md          # 产品需求文档
-├── packages/
-│   ├── shared/          # 共享类型、排期/空档计算引擎、内置节假日兜底
-│   ├── server/          # Hono REST API 与 SQLite 持久化
-│   └── app/             # Vite + React 19 全屏排期画布前端
-└── package.json
-```
+[产品文档](./docs/index.md) · [MIT License](./License)
 
-## License
-
-[MIT](./License)
+维护数据库结构时，更新 `packages/server/src/schema.ts` 后运行 `pnpm --filter @calendar/server db:generate`，并提交生成的迁移。

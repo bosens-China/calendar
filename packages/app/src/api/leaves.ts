@@ -11,28 +11,26 @@ export interface LeaveQueryParams {
   memberId?: string;
 }
 
-export async function getLeavesApi(params?: LeaveQueryParams): Promise<Leave[]> {
-  const res = await request<{ leaves: Leave[] } | Leave[]>('/api/leaves', {
-    params: params as Record<string, string | undefined>,
+export async function getLeavesApi(params?: LeaveQueryParams, signal?: AbortSignal): Promise<Leave[]> {
+  const list = await request<Leave[]>('/api/leaves', {
+    params: { ...params }, signal,
   });
-  const list = (res as { leaves: Leave[] }).leaves ?? res;
-  return Array.isArray(list) ? list : [];
+  if (!Array.isArray(list)) throw new Error('服务器返回的数据格式不正确');
+  return list;
 }
 
 export async function createLeaveApi(data: CreateLeaveRequest): Promise<Leave> {
-  const res = await request<{ leave: Leave } | Leave>('/api/leaves', {
+  return request<Leave>('/api/leaves', {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  return ((res as { leave: Leave }).leave ?? res) as Leave;
 }
 
 export async function updateLeaveApi(id: string, data: UpdateLeaveRequest): Promise<Leave> {
-  const res = await request<{ leave: Leave } | Leave>(`/api/leaves/${id}`, {
+  return request<Leave>(`/api/leaves/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
-  return ((res as { leave: Leave }).leave ?? res) as Leave;
 }
 
 export async function deleteLeaveApi(id: string): Promise<void> {

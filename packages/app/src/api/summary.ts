@@ -8,11 +8,10 @@ export interface SummaryQueryParams {
   memberId?: string;
 }
 
-export async function getSummaryApi(params: SummaryQueryParams): Promise<PeriodSummaryResponse> {
-  const res = await request<PeriodSummaryResponse>('/api/summary', {
-    params: params as unknown as Record<string, string | number | boolean | undefined>,
+export async function getSummaryApi(params: SummaryQueryParams, signal?: AbortSignal): Promise<PeriodSummaryResponse> {
+  return request<PeriodSummaryResponse>('/api/summary', {
+    params: { ...params }, signal,
   });
-  return res;
 }
 
 export const summaryApi = {

@@ -1,3 +1,4 @@
+import { QueryError } from '../components/ui/QueryError';
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, Edit2, Plus, Trash2 } from 'lucide-react';
@@ -15,9 +16,9 @@ export const ProjectsView: React.FC = () => {
   const [color, setColor] = useState(PROJECT_PALETTE[0]);
   const [description, setDescription] = useState('');
 
-  const { data: projects = [], isLoading } = useQuery<Project[]>({
+  const { data: projects = [], isLoading, isError, refetch } = useQuery<Project[]>({
     queryKey: ['projects'],
-    queryFn: projectsApi.getProjects,
+    queryFn: ({ signal }) => projectsApi.getProjects(signal),
   });
 
   const invalidate = () => {
@@ -151,6 +152,7 @@ export const ProjectsView: React.FC = () => {
         </form>
       )}
 
+      {isError && <QueryError message="无法加载项目" retry={() => void refetch()} />}
       {isLoading ? (
         <div className="py-10">
           <Spinner label="加载项目中..." />

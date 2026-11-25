@@ -6,26 +6,28 @@ import type {
   UpdateMemberRequest,
 } from '@calendar/shared';
 
-export async function getMembersApi(): Promise<Member[]> {
-  const res = await request<{ members: Member[] } | Member[]>('/api/members');
-  const list = (res as { members: Member[] }).members ?? res;
-  return Array.isArray(list) ? list : [];
+export async function getMembersApi(signal?: AbortSignal): Promise<Member[]> {
+  const list = await request<Member[]>('/api/members', { signal });
+  if (!Array.isArray(list)) throw new Error('服务器返回的数据格式不正确');
+  return list;
 }
 
-export async function createMemberApi(data: CreateMemberRequest): Promise<Member> {
-  const res = await request<{ member: Member } | Member>('/api/members', {
+// The local workspace creates roster entries without account credentials.
+export type ManagedMemberInput = Omit<CreateMemberRequest, 'username' | 'password' | 'role'> &
+  Partial<Pick<CreateMemberRequest, 'username' | 'password' | 'role'>>;
+
+export async function createMemberApi(data: ManagedMemberInput): Promise<Member> {
+  return request<Member>('/api/members', {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  return ((res as { member: Member }).member ?? res) as Member;
 }
 
 export async function updateMemberApi(id: string, data: UpdateMemberRequest): Promise<Member> {
-  const res = await request<{ member: Member } | Member>(`/api/members/${id}`, {
+  return request<Member>(`/api/members/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
-  return ((res as { member: Member }).member ?? res) as Member;
 }
 
 export async function resetMemberPasswordApi(id: string, data: ResetPasswordRequest): Promise<void> {

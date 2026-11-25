@@ -1,45 +1,41 @@
+import type { HolidayOverride, WorkSlot } from '@calendar/shared';
 import { request } from './client';
-import type {
-  HolidayOverride,
-  WorkSlot,
-} from '@calendar/shared';
 
-export async function getWorkSlotsApi(): Promise<WorkSlot[]> {
-  const res = await request<{ slots: WorkSlot[] } | WorkSlot[]>('/api/settings/work-slots');
-  const list = (res as { slots: WorkSlot[] }).slots ?? res;
-  return Array.isArray(list) ? list : [];
+function checkedList<T>(value: T[]): T[] {
+  if (!Array.isArray(value)) throw new Error('服务器返回的数据格式不正确');
+  return value;
+}
+
+export async function getWorkSlotsApi(signal?: AbortSignal): Promise<WorkSlot[]> {
+  const { slots } = await request<{ slots: WorkSlot[] }>('/api/settings/work-slots', { signal });
+  return checkedList(slots);
 }
 
 export async function updateWorkSlotsApi(slots: WorkSlot[]): Promise<WorkSlot[]> {
-  const res = await request<{ slots: WorkSlot[] } | WorkSlot[]>('/api/settings/work-slots', {
+  const result = await request<{ slots: WorkSlot[] }>('/api/settings/work-slots', {
     method: 'PUT',
     body: JSON.stringify({ slots }),
   });
-  const list = (res as { slots: WorkSlot[] }).slots ?? res;
-  return Array.isArray(list) ? list : [];
+  return checkedList(result.slots);
 }
 
-export async function getHolidaysApi(year?: number): Promise<HolidayOverride[]> {
-  const res = await request<{ holidays: HolidayOverride[] } | HolidayOverride[]>('/api/settings/holidays', {
-    params: year ? { year } : undefined,
+export async function getHolidaysApi(year?: number, signal?: AbortSignal): Promise<HolidayOverride[]> {
+  const { holidays } = await request<{ holidays: HolidayOverride[] }>('/api/settings/holidays', {
+    params: { year }, signal,
   });
-  const list = (res as { holidays: HolidayOverride[] }).holidays ?? res;
-  return Array.isArray(list) ? list : [];
+  return checkedList(holidays);
 }
 
-export async function updateHolidaysApi(
-  holidays: HolidayOverride[],
-  year?: number,
-): Promise<HolidayOverride[]> {
-  const res = await request<{ holidays: HolidayOverride[] } | HolidayOverride[]>(
-    '/api/settings/holidays',
-    {
-      method: 'PUT',
-      body: JSON.stringify(year !== undefined ? { year, holidays } : { holidays }),
-    },
-  );
-  const list = (res as { holidays: HolidayOverride[] }).holidays ?? res;
-  return Array.isArray(list) ? list : [];
+export async function saveHolidayApi({ date, ...fields }: HolidayOverride): Promise<HolidayOverride> {
+  const { data } = await request<{ data: HolidayOverride }>(`/api/settings/holidays/${date}`, {
+    method: 'PUT',
+    body: JSON.stringify(fields),
+  });
+  return data;
+}
+
+export async function deleteHolidayApi(date: string): Promise<void> {
+  await request(`/api/settings/holidays/${date}`, { method: 'DELETE' });
 }
 
 export interface HolidaySyncResponse {
@@ -49,7 +45,7 @@ export interface HolidaySyncResponse {
   updated: boolean;
 }
 
-export async function syncHolidaysApi(year: number): Promise<HolidaySyncResponse> {
+export async function syncHolidaysApi(year?: number): Promise<HolidaySyncResponse> {
   return request<HolidaySyncResponse>('/api/settings/holidays/sync', {
     method: 'POST',
     body: JSON.stringify({ year }),
@@ -57,23 +53,19 @@ export async function syncHolidaysApi(year: number): Promise<HolidaySyncResponse
 }
 
 export async function resetHolidaysApi(year?: number): Promise<HolidayOverride[]> {
-  const res = await request<{ holidays: HolidayOverride[] } | HolidayOverride[]>(
-    '/api/settings/holidays/reset',
-    {
-      method: 'POST',
-      body: JSON.stringify(year ? { year } : {}),
-    },
-  );
-  const list = (res as { holidays: HolidayOverride[] }).holidays ?? res;
-  return Array.isArray(list) ? list : [];
+  const { holidays } = await request<{ holidays: HolidayOverride[] }>('/api/settings/holidays/reset', {
+    method: 'POST',
+    body: JSON.stringify({ year }),
+  });
+  return checkedList(holidays);
 }
 
 export const settingsApi = {
   getWorkSlots: getWorkSlotsApi,
   updateWorkSlots: updateWorkSlotsApi,
   getHolidays: getHolidaysApi,
-  updateHolidays: updateHolidaysApi,
+  saveHoliday: saveHolidayApi,
+  deleteHoliday: deleteHolidayApi,
   syncHolidays: syncHolidaysApi,
   resetHolidays: resetHolidaysApi,
 };
-

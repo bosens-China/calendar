@@ -90,36 +90,15 @@ export const LoginView: React.FC = () => {
       <div className="w-full max-w-sm">
         <div className="mb-7 text-center">
           <div className="mx-auto mb-3.5 flex h-12 w-12 items-center justify-center rounded-2xl bg-zinc-900 dark:bg-zinc-800 shadow-lg">
-            <img src="/favicon.svg" alt="Logo" className="h-9 w-9 rounded-lg" />
+            <img src={import.meta.env.BASE_URL + 'favicon.svg'} alt="Logo" className="h-9 w-9 rounded-lg" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
             排期画布 · 团队日程
           </h1>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            极简 XY 排期视图 · 多项目协同 · 空档一目了然
+            查看团队排期、项目任务和空闲时段
           </p>
         </div>
-
-        {import.meta.env.DEV && (
-          <div className="mb-4 flex items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2.5 text-xs text-zinc-600 dark:text-zinc-300 shadow-2xs">
-            <div>
-              <span className="text-zinc-400">演示账号：</span>
-              <span className="font-mono font-semibold text-zinc-800 dark:text-zinc-100">
-                admin / admin123
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setUsername('admin');
-                setPassword('admin123');
-              }}
-              className="font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-            >
-              一键填入
-            </button>
-          </div>
-        )}
 
         <form
           onSubmit={handleLogin}
@@ -132,7 +111,7 @@ export const LoginView: React.FC = () => {
               <Input
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="请输入用户名"
+                placeholder="请输入登录账号"
                 autoComplete="username"
                 className="pl-9"
               />
@@ -193,7 +172,7 @@ export const LoginView: React.FC = () => {
               <Input
                 value={fpUsername}
                 onChange={(e) => setFpUsername(e.target.value)}
-                placeholder="例如：linqing"
+                placeholder="例如：zhangsan"
                 className="pl-9"
               />
             </div>
@@ -206,7 +185,7 @@ export const LoginView: React.FC = () => {
                 type="email"
                 value={fpEmail}
                 onChange={(e) => setFpEmail(e.target.value)}
-                placeholder="例如：linqing@calendar.local"
+                placeholder="例如：zhangsan@company.com"
                 className="pl-9"
               />
             </div>

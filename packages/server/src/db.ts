@@ -4,97 +4,61 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
-import { DEFAULT_CN_HOLIDAYS, DEFAULT_WORK_SLOTS, type HolidayOverride } from '@calendar/shared';
+import { eq } from 'drizzle-orm';
+import { drizzle, type NodeSQLiteDatabase } from 'drizzle-orm/node-sqlite';
+import { migrate } from 'drizzle-orm/node-sqlite/migrator';
+import { DEFAULT_CN_HOLIDAYS, DEFAULT_WORK_SLOTS } from '@calendar/shared';
+import { holidays, members, projects, settings } from './schema.js';
 
 const defaultPath = fileURLToPath(new URL('../data/calendar.db', import.meta.url));
+const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
 
-export function transaction<T>(db: DatabaseSync, operation: () => T): T {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const result = operation();
-    db.exec('COMMIT');
-    return result;
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
+export type CalendarDb = NodeSQLiteDatabase;
+
+export function transaction<T>(db: CalendarDb, operation: (db: CalendarDb) => T & (T extends PromiseLike<unknown> ? never : unknown)): T {
+  return db.transaction<unknown>(operation, { behavior: 'immediate' }) as T;
 }
 
-export function replaceHolidays(db: DatabaseSync, holidays: HolidayOverride[], year?: number) {
-  transaction(db, () => {
-    if (year === undefined) db.exec('DELETE FROM holidays');
-    else db.prepare('DELETE FROM holidays WHERE date BETWEEN ? AND ?').run(`${year}-01-01`, `${year}-12-31`);
-    insertHolidays(db, holidays);
-  });
-}
-
-function insertHolidays(db: DatabaseSync, holidays: HolidayOverride[]) {
-  const insert = db.prepare('INSERT INTO holidays(date, name, kind) VALUES (?, ?, ?)');
-  for (const holiday of holidays) insert.run(holiday.date, holiday.name, holiday.kind);
-}
-
-export function createDb(path = process.env.DB_PATH || defaultPath): DatabaseSync {
+export function createDb(path = process.env.DB_PATH || defaultPath, initialPassword = process.env.ADMIN_INIT_PASSWORD) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path);
+  const client = new DatabaseSync(path);
+  const db = drizzle({ client });
   try {
-    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL');
+    client.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL');
     transaction(db, () => {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS members (
-          id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, email TEXT NOT NULL DEFAULT '',
-          passwordHash TEXT NOT NULL,
-          name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','member')),
-          title TEXT NOT NULL, avatarColor TEXT NOT NULL, active INTEGER NOT NULL,
-          createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS projects (
-          id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL, description TEXT NOT NULL,
-          archived INTEGER NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS tasks (
-          id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL,
-          projectId TEXT NOT NULL REFERENCES projects(id),
-          assigneeId TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
-          startDate TEXT NOT NULL, startTime TEXT NOT NULL, endDate TEXT NOT NULL, endTime TEXT NOT NULL,
-          status TEXT NOT NULL, priority TEXT NOT NULL, adjustedByMember INTEGER NOT NULL,
-          createdBy TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS leaves (
-          id TEXT PRIMARY KEY, memberId TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
-          startDate TEXT NOT NULL, startTime TEXT NOT NULL, endDate TEXT NOT NULL, endTime TEXT NOT NULL,
-          type TEXT NOT NULL, reason TEXT NOT NULL, createdBy TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS holidays (date TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL);
-        CREATE INDEX IF NOT EXISTS tasks_assignee_dates ON tasks(assigneeId, startDate, endDate);
-        CREATE INDEX IF NOT EXISTS tasks_project ON tasks(projectId);
-        CREATE INDEX IF NOT EXISTS leaves_member_dates ON leaves(memberId, startDate, endDate);
-      `);
-      const memberCols = db.prepare('PRAGMA table_info(members)').all() as Array<{ name: string }>;
-      if (!memberCols.some(c => c.name === 'email')) {
-        db.exec("ALTER TABLE members ADD COLUMN email TEXT NOT NULL DEFAULT ''");
+      // Early SQLite files lacked email. The baseline migration reuses these tables.
+      const columns = client.prepare('PRAGMA table_info(members)').all() as Array<{ name: string }>;
+      if (columns.length && !columns.some(column => column.name === 'email')) {
+        client.exec("ALTER TABLE members ADD COLUMN email TEXT NOT NULL DEFAULT ''");
       }
+    });
+    migrate(db, { migrationsFolder });
+    transaction(db, tx => {
       const now = new Date().toISOString();
-      if (!db.prepare("SELECT id FROM members WHERE role = 'admin' LIMIT 1").get()) {
-        const initPass = process.env.ADMIN_INIT_PASSWORD || 'admin123';
-        const initEmail = process.env.ADMIN_INIT_EMAIL || 'admin@calendar.local';
-        db.prepare(`INSERT INTO members(id, username, email, passwordHash, name, role, title, avatarColor, active, createdAt, updatedAt)
-                    VALUES (?, 'admin', ?, ?, '管理员', 'admin', '', '#2563eb', 1, ?, ?)`)
-          .run(randomUUID(), initEmail, bcrypt.hashSync(initPass, 10), now, now);
+      if (!tx.select({ id: members.id }).from(members).where(eq(members.role, 'admin')).get()) {
+        if (!initialPassword || initialPassword.length < 12 || Buffer.byteLength(initialPassword) > 72) {
+          throw new Error('初始化数据库时，ADMIN_INIT_PASSWORD 必须至少有 12 个字符且不超过 72 字节');
+        }
+        tx.insert(members).values({
+          id: randomUUID(), username: 'admin', email: process.env.ADMIN_INIT_EMAIL || 'admin@calendar.local',
+          name: '管理员', passwordHash: bcrypt.hashSync(initialPassword, 10), role: 'admin',
+          title: '', avatarColor: '#2563eb', active: true, createdAt: now, updatedAt: now,
+        }).run();
       }
-      // A saved empty holiday calendar or project list must survive the next startup.
-      if (!db.prepare("SELECT key FROM settings WHERE key = 'workSlots'").get()) {
-        db.prepare("INSERT INTO settings(key, value) VALUES ('workSlots', ?)").run(JSON.stringify(DEFAULT_WORK_SLOTS));
-        const project = db.prepare(`INSERT INTO projects(id, name, color, description, archived, createdAt, updatedAt)
-                                    VALUES (?, ?, ?, '', 0, ?, ?)`);
-        project.run(randomUUID(), '核心研发', '#1677ff', now, now);
-        project.run(randomUUID(), '运维支持', '#13a8a8', now, now);
-        insertHolidays(db, DEFAULT_CN_HOLIDAYS.filter(h => h.date >= '2026-01-01'));
+      if (!tx.select({ key: settings.key }).from(settings).where(eq(settings.key, 'workSlots')).get()) {
+        tx.insert(settings).values({ key: 'workSlots', value: JSON.stringify(DEFAULT_WORK_SLOTS) }).run();
+        tx.insert(projects).values([
+          { name: '核心研发', color: '#1677ff' },
+          { name: '运维支持', color: '#13a8a8' },
+        ].map(project => ({
+          ...project, id: randomUUID(), description: '', archived: false, createdAt: now, updatedAt: now,
+        }))).run();
+        tx.insert(holidays).values(DEFAULT_CN_HOLIDAYS.filter(day => day.date >= '2026-01-01')).run();
       }
     });
     return db;
   } catch (error) {
-    db.close();
+    client.close();
     throw error;
   }
 }

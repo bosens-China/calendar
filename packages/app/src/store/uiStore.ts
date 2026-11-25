@@ -1,11 +1,11 @@
 import { create } from 'zustand';
+import { getCalendarDate } from '@calendar/shared';
 import { dayjs, clampDateMin, canNavigatePrev } from '../utils/date';
 
-export type NavKey = 'calendar' | 'projects' | 'members' | 'settings';
 export type PeriodType = 'week' | 'month';
 
 interface UiState {
-  activeNav: NavKey;
+  calendarLayout: 'timeline' | 'calendar';
   calendarPeriod: PeriodType;
   currentDate: string; // YYYY-MM-DD
   selectedProjectIds: string[]; // empty means all
@@ -13,7 +13,7 @@ interface UiState {
   onlyGap: boolean;
   hideNonWorkdays: boolean;
 
-  setActiveNav: (nav: NavKey) => void;
+  setCalendarLayout: (layout: UiState['calendarLayout']) => void;
   setCalendarPeriod: (period: PeriodType) => void;
   setCurrentDate: (date: string) => void;
   setSelectedProjectIds: (ids: string[]) => void;
@@ -27,15 +27,15 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  activeNav: 'calendar',
+  calendarLayout: 'timeline',
   calendarPeriod: 'week',
-  currentDate: clampDateMin(dayjs().format('YYYY-MM-DD')),
+  currentDate: clampDateMin(getCalendarDate()),
   selectedProjectIds: [],
   selectedMemberId: null,
   onlyGap: false,
   hideNonWorkdays: false,
 
-  setActiveNav: (nav) => set({ activeNav: nav }),
+  setCalendarLayout: (calendarLayout) => set({ calendarLayout }),
   setCalendarPeriod: (period) => set({ calendarPeriod: period }),
   setCurrentDate: (date) => set({ currentDate: clampDateMin(date) }),
   setSelectedProjectIds: (ids) => set({ selectedProjectIds: ids }),
@@ -65,6 +65,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
 
   goToToday: () => {
-    set({ currentDate: clampDateMin(dayjs().format('YYYY-MM-DD')) });
+    set({ currentDate: clampDateMin(getCalendarDate()) });
   },
 }));

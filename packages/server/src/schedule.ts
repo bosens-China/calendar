@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { CalendarDb } from './db.js';
 import { computePeriodSummary } from '@calendar/shared';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -6,9 +6,9 @@ import { requireAdmin, requireOwner, scopedMember, type Env } from './auth.js';
 import { transaction } from './db.js';
 import { syncYearHolidays } from './holiday-sync.js';
 import { getById, holidays, insert, listMembers, listProjects, listSchedule, remove, update, workSlots } from './store.js';
-import { adjustment, checkDates, checkSpan, checkSummarySpan, leaveCreate, leavePatch, leaveQuery, summaryQuery, taskCreate, taskPatch, taskQuery } from './validation.js';
+import { adjustment, checkDates, checkSpan, checkSummarySpan, leaveCreate, leavePatch, leaveQuery, summaryQuery, taskCreate, taskPatch, taskQuery } from '@calendar/shared';
 
-export function scheduleRoutes(db: DatabaseSync) {
+export function scheduleRoutes(db: CalendarDb) {
   const app = new Hono<Env>();
   app.get('/tasks', c => {
     const q = taskQuery.parse(c.req.query());
@@ -23,7 +23,7 @@ export function scheduleRoutes(db: DatabaseSync) {
   app.patch('/tasks/:id', async c => {
     const body: unknown = await c.req.json();
     const user = c.get('user');
-    const result = transaction(db, () => {
+    const result = transaction(db, db => {
       const task = getById(db, 'tasks', c.req.param('id'));
       requireOwner(user, task.assigneeId);
       const fields = taskPatch.parse(body);
@@ -54,7 +54,7 @@ export function scheduleRoutes(db: DatabaseSync) {
   app.patch('/leaves/:id', async c => {
     const body: unknown = await c.req.json();
     const user = c.get('user');
-    const result = transaction(db, () => {
+    const result = transaction(db, db => {
       const leave = getById(db, 'leaves', c.req.param('id'));
       requireOwner(user, leave.memberId);
       const fields = leavePatch.parse(body);
@@ -65,7 +65,7 @@ export function scheduleRoutes(db: DatabaseSync) {
     return c.json(result);
   });
   app.delete('/leaves/:id', c => {
-    transaction(db, () => {
+    transaction(db, db => {
       const leave = getById(db, 'leaves', c.req.param('id'));
       requireOwner(c.get('user'), leave.memberId);
       remove(db, 'leaves', leave.id);

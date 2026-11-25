@@ -1,4 +1,10 @@
-const TOKEN_KEY = 'calendar_token';
+export const TOKEN_KEY = 'calendar_token';
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
 
 let onUnauthorizedCallback: (() => void) | null = null;
 
@@ -28,10 +34,11 @@ export function setToken(token: string | null) {
 
 export interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined | null>;
+  authenticate?: boolean;
 }
 
 export async function request<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { params, headers, ...rest } = options;
+  const { params, headers, authenticate = true, ...rest } = options;
   let url = path.startsWith('/api') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
 
   if (params) {
@@ -47,7 +54,7 @@ export async function request<T = unknown>(path: string, options: RequestOptions
     }
   }
 
-  const token = getToken();
+  const token = authenticate ? getToken() : null;
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(headers as Record<string, string>),
@@ -62,7 +69,7 @@ export async function request<T = unknown>(path: string, options: RequestOptions
     headers: requestHeaders,
   });
 
-  if (response.status === 401) {
+  if (response.status === 401 && token) {
     // Only invalidate session if the token hasn't already changed to a newer session
     if (token && getToken() === token) {
       setToken(null);
@@ -70,20 +77,20 @@ export async function request<T = unknown>(path: string, options: RequestOptions
         onUnauthorizedCallback();
       }
     }
-    throw new Error('未授权或登录已过期，请重新登录');
+    throw new ApiError('未授权或登录已过期，请重新登录', 401);
   }
 
   if (!response.ok) {
     let errorMsg = `请求失败: ${response.status} ${response.statusText}`;
     try {
       const errJson = await response.json();
-      if (errJson && (errJson.message || errJson.error)) {
-        errorMsg = errJson.message || errJson.error;
+      if (errJson && (typeof errJson.message === 'string' || typeof errJson.error === 'string')) {
+        errorMsg = typeof errJson.message === 'string' ? errJson.message : errJson.error;
       }
     } catch {
       // ignore JSON parse error
     }
-    throw new Error(errorMsg);
+    throw new ApiError(errorMsg, response.status);
   }
 
   if (response.status === 204) {
