@@ -27,6 +27,12 @@ test('team mode isolates users and synchronizes logout between tabs', async ({ p
   await login(page, 'admin', adminPassword);
   await expect(page.getByText('管理员专属任务', { exact: true })).toBeVisible();
   await expect(page.getByText('成员专属任务', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '月', exact: true }).click();
+  const teamCanvas = page.getByRole('region', { name: '排期画布' });
+  await expect(teamCanvas.locator('[data-non-workday="2026-11-28"]')).toHaveCount(2);
+  const dateScrollbar = page.locator('.schedule-scrollbar[data-orientation="horizontal"]');
+  await expect(dateScrollbar).toBeVisible();
+  expect((await dateScrollbar.boundingBox())?.x).toBe((await teamCanvas.locator('[data-date="2026-11-01"]').boundingBox())?.x);
 
   const memberContext = await browser.newContext();
   const memberPage = await memberContext.newPage();

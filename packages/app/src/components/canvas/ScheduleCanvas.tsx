@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import * as ScrollArea from '@radix-ui/react-scroll-area';
 import { MoreHorizontal, UserPlus } from 'lucide-react';
 import type {
   HolidayOverride,
@@ -43,8 +44,6 @@ interface Props {
   ) => void;
   onOpenMembers: () => void;
 }
-
-const Y_AXIS_WIDTH = 176;
 
 export const ScheduleCanvas: React.FC<Props> = ({
   period,
@@ -143,205 +142,205 @@ export const ScheduleCanvas: React.FC<Props> = ({
   const dateColumns = period === 'month'
     ? displayDates.map(() => '104px')
     : displayDates.map(date => isWorkday(date, holidayMap) ? 'minmax(184px, 1fr)' : 'minmax(112px, 124px)');
-  const gridTemplateColumns = `${Y_AXIS_WIDTH}px ${dateColumns.join(' ') || 'minmax(0, 1fr)'}`;
+  const gridTemplateColumns = `var(--member-column-width) ${dateColumns.join(' ') || 'minmax(0, 1fr)'}`;
 
   const dayActions: ScheduleDayActions = {
     visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick,
   };
 
   return (
-    <main className="flex flex-1 min-h-0 flex-col bg-white dark:bg-zinc-950">
-      <div
-        ref={viewportRef}
-        key={`${period}:${dates[0]}`}
-        role="region"
-        aria-label="排期画布"
-        tabIndex={0}
-        onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleCanvasMouseMove}
-        onMouseUp={endPan}
-        onMouseLeave={endPan}
-        className={cn(
-          'canvas-viewport relative flex-1 min-h-0 overflow-auto bg-white dark:bg-zinc-950',
-          isPanning && 'is-panning select-none',
-        )}
-      >
-        <div
-          className="grid min-h-full min-w-full"
-          style={{
-            gridTemplateColumns,
-            gridTemplateRows: `repeat(${displayDates.length ? rows.length + 1 : 1}, max-content) minmax(0, 1fr)`,
-            width: period === 'month' ? 'max-content' : '100%',
-          }}
+    <main className="schedule-canvas flex flex-1 min-h-0 flex-col bg-white dark:bg-zinc-950">
+      <ScrollArea.Root key={`${period}:${dates[0]}`} type="auto" className="schedule-scroll-area min-h-0 flex-1">
+        <ScrollArea.Viewport
+          ref={viewportRef}
+          role="region"
+          aria-label="排期画布"
+          tabIndex={0}
+          onMouseDown={handleCanvasMouseDown}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseUp={endPan}
+          onMouseLeave={endPan}
+          className={cn(
+            'canvas-viewport size-full',
+            isPanning && 'is-panning select-none',
+          )}
         >
-          {/* Sticky Top-Left Origin (distinct member axis header) */}
-          <div className="sticky top-0 left-0 z-40 flex items-center justify-between border-b border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/95 dark:bg-zinc-900/95 backdrop-blur-xs px-4 py-3 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.06)]">
-            <span>成员</span>
-            <span>{rows.length}</span>
-          </div>
+          <div
+            className="grid min-w-full"
+            style={{
+              gridTemplateColumns,
+              width: period === 'month' ? 'max-content' : '100%',
+            }}
+          >
+            {/* Sticky Top-Left Origin (distinct member axis header) */}
+            <div className="sticky top-0 left-0 z-40 flex items-center justify-between border-b border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/95 dark:bg-zinc-900/95 backdrop-blur-xs px-4 py-3 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.06)]">
+              <span>成员</span>
+              <span>{rows.length}</span>
+            </div>
 
-          {/* Sticky X-Axis Dates */}
-          {displayDates.map((dateStr) => {
-            const d = dayjs(dateStr);
-            const weekdayIdx = d.isoWeekday() - 1;
-            const holiday = holidayMap.get(dateStr);
-            const workday = isWorkday(dateStr, holidayMap);
-            const isToday = dateStr === today;
-            const isFutureMonthDate = period === 'month' && dateStr > today;
+            {/* Sticky X-Axis Dates */}
+            {displayDates.map((dateStr) => {
+              const d = dayjs(dateStr);
+              const weekdayIdx = d.isoWeekday() - 1;
+              const holiday = holidayMap.get(dateStr);
+              const workday = isWorkday(dateStr, holidayMap);
+              const isToday = dateStr === today;
+              const isFutureMonthDate = period === 'month' && dateStr > today;
 
-            return (
-              <div
-                key={dateStr}
-                data-date={dateStr}
-                className={cn(
-                  'sticky top-0 z-30 flex flex-col justify-center border-b border-r border-zinc-100 dark:border-zinc-800/70 backdrop-blur-xs',
-                  !workday || isFutureMonthDate
-                    ? 'bg-zinc-100 dark:bg-zinc-900'
-                    : isToday
-                      ? 'bg-blue-50 dark:bg-blue-950'
-                      : 'bg-white dark:bg-zinc-950',
-                  period === 'week' ? 'px-3 py-2.5' : 'px-1 py-2.5 items-center',
-                )}
-              >
+              return (
                 <div
+                  key={dateStr}
+                  data-date={dateStr}
                   className={cn(
-                    'flex items-center gap-1.5 whitespace-nowrap',
-                    period === 'week' ? 'justify-between' : 'flex-col gap-0.5',
+                    'sticky top-0 z-30 flex flex-col justify-center border-b border-r border-zinc-100 dark:border-zinc-800/70 backdrop-blur-xs',
+                    workday && isFutureMonthDate
+                      ? 'bg-zinc-100 dark:bg-zinc-900'
+                      : isToday
+                        ? 'bg-blue-50 dark:bg-blue-950'
+                        : 'bg-white dark:bg-zinc-950',
+                    period === 'week' ? 'px-3 py-2.5' : 'px-1 py-2.5 items-center',
                   )}
                 >
-                  <div className="flex items-center gap-1.5 whitespace-nowrap">
-                    {isToday && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />}
-                    <span
-                      className={cn(
-                        'font-semibold tracking-tight whitespace-nowrap',
-                        period === 'week' ? 'text-[13px]' : 'text-xs',
-                        isToday
-                          ? 'text-blue-700 dark:text-blue-400'
-                          : workday
-                            ? 'text-zinc-800 dark:text-zinc-100'
-                            : 'text-zinc-500 dark:text-zinc-500',
-                      )}
-                    >
-                      {period === 'week' ? `周${SHORT_WEEKDAY_NAMES_ZH[weekdayIdx]}` : d.date()}
-                    </span>
-                    <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-normal whitespace-nowrap">
-                      {period === 'week' ? d.format('M/D') : SHORT_WEEKDAY_NAMES_ZH[weekdayIdx]}
-                    </span>
-                  </div>
-
-                  {holiday && (
-                    <span
-                      className={cn(
-                        'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap',
-                        holiday.kind === 'holiday'
-                          ? 'bg-rose-100/80 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400'
-                          : 'bg-blue-100/80 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
-                      )}
-                    >
-                      {holiday.kind === 'holiday'
-                        ? period === 'week'
-                          ? holiday.name
-                          : '休'
-                        : '班'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Y-Axis Rows & Cells */}
-          {displayDates.length > 0 && rows.map(({ member, dayMap, expected, scheduled, gap, periodGap, saturation }) => {
-            const memberColor = member.avatarColor || '#2563eb';
-            const pct = Math.round(saturation * 100);
-
-            return (
-              <React.Fragment key={member.id}>
-                {/* Sticky Member Header (clearly separated from main canvas) */}
-                <div className="group sticky left-0 z-20 flex flex-col justify-center gap-2 border-b border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 py-3.5 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.06)]">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className={cn(
+                      'flex items-center gap-1.5 whitespace-nowrap',
+                      period === 'week' ? 'justify-between' : 'flex-col gap-0.5',
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                      {isToday && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />}
                       <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: memberColor }}
-                      />
-                      <div className="min-w-0">
-                        <div className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
-                          {member.name}
-                        </div>
-                        {member.title && (
-                          <div className="truncate text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 leading-tight">
-                            {member.title}
-                          </div>
+                        className={cn(
+                          'font-semibold tracking-tight whitespace-nowrap',
+                          period === 'week' ? 'text-[13px]' : 'text-xs',
+                          isToday
+                            ? 'text-blue-700 dark:text-blue-400'
+                            : workday
+                              ? 'text-zinc-800 dark:text-zinc-100'
+                              : 'text-zinc-500 dark:text-zinc-500',
                         )}
-                      </div>
+                      >
+                        {period === 'week' ? `周${SHORT_WEEKDAY_NAMES_ZH[weekdayIdx]}` : d.date()}
+                      </span>
+                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-normal whitespace-nowrap">
+                        {period === 'week' ? d.format('M/D') : SHORT_WEEKDAY_NAMES_ZH[weekdayIdx]}
+                      </span>
                     </div>
 
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        data-interactive="true"
-                        onClick={onOpenMembers}
-                        title="管理成员"
-                        className="rounded-md p-1 text-zinc-400 opacity-0 transition-opacity hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 group-hover:opacity-100 cursor-pointer"
+                    {holiday && (
+                      <span
+                        className={cn(
+                          'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap',
+                          holiday.kind === 'holiday'
+                            ? 'bg-rose-100/80 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400'
+                            : 'bg-blue-100/80 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
+                        )}
                       >
-                        <MoreHorizontal className="h-3.5 w-3.5" />
-                      </button>
+                        {holiday.kind === 'holiday'
+                          ? period === 'week'
+                            ? holiday.name
+                            : '休'
+                          : '班'}
+                      </span>
                     )}
                   </div>
-
-                  <div
-                    className="flex items-center gap-2"
-                    title={expected > 0
-                      ? `已排 ${formatHours(scheduled)} / 应出勤 ${formatHours(expected)}${periodGap > 0 ? ` · ${gap > 0 ? '空余' : '未排'} ${formatHours(periodGap)}` : ''}`
-                      : '当前周期暂无待排工作日'}
-                  >
-                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{
-                          width: `${expected > 0 ? pct : 0}%`,
-                          backgroundColor:
-                            expected === 0 ? 'transparent' : periodGap === 0 ? memberColor : pct === 0 ? '#f43f5e' : '#f59e0b',
-                        }}
-                      />
-                    </div>
-                    <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
-                      {expected > 0 ? `${pct}%` : '—'}
-                    </span>
-                  </div>
                 </div>
+              );
+            })}
 
-                {displayDates.map(date => (
-                  <ScheduleDayCell key={date} dateStr={date} period={period} member={member}
-                    daySched={dayMap.get(date)} isToday={date === today} isPast={date < today} isAdmin={isAdmin}
-                    isFutureMonthDate={period === 'month' && date > today} onlyGap={onlyGap}
-                    actions={dayActions} didPan={() => panRef.current.moved}
-                    handleDragStart={handleDragStart} handleDropOnDay={handleDropOnDay}
-                  />
-                ))}
-              </React.Fragment>
-            );
-          })}
+            {/* Y-Axis Rows & Cells */}
+            {displayDates.length > 0 && rows.map(({ member, dayMap, expected, scheduled, gap, periodGap, saturation }) => {
+              const memberColor = member.avatarColor || '#2563eb';
+              const pct = Math.round(saturation * 100);
 
-          <div aria-hidden="true" className="sticky left-0 z-20 border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900" />
-          {displayDates.length > 0 && (!onlyGap || rows.length > 0) && displayDates.map(date => (
-            <div key={date} aria-hidden="true" className={cn(
-              (!isWorkday(date, holidayMap) || (period === 'month' && date > today))
-                && 'bg-zinc-100 dark:bg-zinc-900',
-            )} />
-          ))}
-          {(!displayDates.length || (onlyGap && !rows.length)) && (
-            <p className="p-4 text-xs text-zinc-500 dark:text-zinc-400" style={{ gridColumn: '2 / -1' }}>
-              {displayDates.length ? '当前周期没有待排空档' : '当前周期没有工作日'}
-            </p>
-          )}
-        </div>
-      </div>
+              return (
+                <React.Fragment key={member.id}>
+                  {/* Sticky Member Header (clearly separated from main canvas) */}
+                  <div className="group sticky left-0 z-20 flex flex-col justify-center gap-2 border-b border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 py-3.5 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.06)]">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: memberColor }}
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
+                            {member.name}
+                          </div>
+                          {member.title && (
+                            <div className="truncate text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 leading-tight">
+                              {member.title}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          data-interactive="true"
+                          onClick={onOpenMembers}
+                          title="管理成员"
+                          className="rounded-md p-1 text-zinc-400 opacity-0 transition-opacity hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 group-hover:opacity-100 cursor-pointer"
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div
+                      className="flex items-center gap-2"
+                      title={expected > 0
+                        ? `已排 ${formatHours(scheduled)} / 应出勤 ${formatHours(expected)}${periodGap > 0 ? ` · ${gap > 0 ? '空余' : '未排'} ${formatHours(periodGap)}` : ''}`
+                        : '当前周期暂无待排工作日'}
+                    >
+                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                        <div
+                          className="h-full rounded-full transition-all duration-300"
+                          style={{
+                            width: `${expected > 0 ? pct : 0}%`,
+                            backgroundColor:
+                              expected === 0 ? 'transparent' : periodGap === 0 ? memberColor : pct === 0 ? '#f43f5e' : '#f59e0b',
+                          }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+                        {expected > 0 ? `${pct}%` : '—'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {displayDates.map(date => (
+                    <ScheduleDayCell key={date} dateStr={date} period={period} member={member}
+                      daySched={dayMap.get(date)} isToday={date === today} isPast={date < today} isAdmin={isAdmin}
+                      isFutureMonthDate={period === 'month' && date > today} onlyGap={onlyGap}
+                      actions={dayActions} didPan={() => panRef.current.moved}
+                      handleDragStart={handleDragStart} handleDropOnDay={handleDropOnDay}
+                    />
+                  ))}
+                </React.Fragment>
+              );
+            })}
+
+            {(!displayDates.length || (onlyGap && !rows.length)) && (
+              <p className="p-4 text-xs text-zinc-500 dark:text-zinc-400" style={{ gridColumn: '2 / -1' }}>
+                {displayDates.length ? '当前周期没有待排空档' : '当前周期没有工作日'}
+              </p>
+            )}
+          </div>
+        </ScrollArea.Viewport>
+        <ScrollArea.Scrollbar orientation="horizontal" className="schedule-scrollbar">
+          <ScrollArea.Thumb className="schedule-scroll-thumb" />
+        </ScrollArea.Scrollbar>
+        <ScrollArea.Scrollbar orientation="vertical" className="schedule-scrollbar">
+          <ScrollArea.Thumb className="schedule-scroll-thumb" />
+        </ScrollArea.Scrollbar>
+        <ScrollArea.Corner />
+      </ScrollArea.Root>
 
       <footer className="flex shrink-0 items-stretch border-t border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
         {isAdmin && (
-          <div className="shrink-0 border-r border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900" style={{ width: Y_AXIS_WIDTH }}>
+          <div className="shrink-0 border-r border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900" style={{ width: 'var(--member-column-width)' }}>
             <button
               type="button"
               onClick={onOpenMembers}

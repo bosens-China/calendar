@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { localUrl, testDate } from './fixtures';
 
-test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
-
 async function addTask(page: Page, title: string) {
   await page.getByRole('button', { name: '新建', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -121,12 +119,32 @@ test('Pages uses IndexedDB, persists across reloads and supports workbench filte
 });
 
 
-test('month has fixed date columns and scrolls with the add-member action pinned', async ({ page }) => {
+test('month scrollbars start at the date columns and non-workdays are shaded per member', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 680 });
-  await page.clock.setFixedTime(testDate);
+  await page.clock.setFixedTime(new Date('2026-10-08T04:00:00Z'));
   await page.goto(localUrl);
   const canvas = page.getByRole('region', { name: '排期画布' });
   const addMember = page.getByRole('button', { name: '添加排期人员', exact: true });
+  const switchToMonth = () => page.getByRole('button', { name: '月', exact: true }).click();
+  const date = (day: string) => canvas.locator(`[data-date="2026-10-${day}"]`);
+  const nonWorkdayCells = (day: string) => canvas.locator(`[data-non-workday="2026-10-${day}"]`);
+
+  await switchToMonth();
+  await expect(nonWorkdayCells('02')).toHaveCount(1);
+  await expect(nonWorkdayCells('11')).toHaveCount(1);
+  await expect(nonWorkdayCells('10')).toHaveCount(0); // 补班周六
+  expect(await date('01').boundingBox()).toMatchObject({ width: 104 });
+  expect(await date('31').boundingBox()).toMatchObject({ width: 104 });
+  const background = (day: string) => date(day).evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(await background('02')).toBe(await background('11'));
+  expect(await background('02')).not.toBe(await background('09')); // 未来工作日
+  const holidayColors = await nonWorkdayCells('02').evaluate(cell => {
+    const { left, width, bottom } = cell.getBoundingClientRect();
+    const below = document.elementFromPoint(left + width / 2, bottom + 20)!;
+    return { cell: getComputedStyle(cell).backgroundColor, below: getComputedStyle(below).backgroundColor };
+  });
+  expect(holidayColors.cell).not.toBe(holidayColors.below);
+
   await addMember.click();
   const members = page.getByRole('dialog');
   for (const name of ['成员甲', '成员乙', '成员丙', '成员丁', '成员戊']) {
@@ -136,31 +154,37 @@ test('month has fixed date columns and scrolls with the add-member action pinned
     await expect(members.getByText(name, { exact: true })).toBeVisible();
   }
   await page.keyboard.press('Escape');
-
-  await page.getByRole('button', { name: '月', exact: true }).click();
-  const date = (day: string) => canvas.locator(`[data-date="2026-11-${day}"]`);
-  await expect(date('01')).toBeVisible();
-  await expect(date('30')).toBeVisible();
-  expect(await date('01').boundingBox()).toMatchObject({ width: 104 });
-  expect(await date('30').boundingBox()).toMatchObject({ width: 104 });
-  const background = (day: string) => date(day).evaluate(el => getComputedStyle(el).backgroundColor);
-  expect(await background('26')).toBe(await background('01'));
-  expect(await background('26')).not.toBe(await background('24'));
+  await expect(nonWorkdayCells('02')).toHaveCount(6);
+  await expect(nonWorkdayCells('11')).toHaveCount(6);
 
   await page.setViewportSize({ width: 1100, height: 390 });
+  const horizontal = page.locator('.schedule-scrollbar[data-orientation="horizontal"]');
+  await expect(horizontal).toBeVisible();
+  await expect(page.locator('.schedule-scrollbar[data-orientation="vertical"]')).toBeVisible();
+  expect((await horizontal.boundingBox())?.x).toBe((await date('01').boundingBox())?.x);
   const viewport = (await canvas.boundingBox())!;
   const pinned = (await addMember.boundingBox())!;
   const firstMember = canvas.getByText('我', { exact: true });
   const initialMember = (await firstMember.boundingBox())!;
-  expect(await canvas.evaluate(el => el.offsetHeight > el.clientHeight && el.offsetWidth > el.clientWidth)).toBe(true);
+  const scrollLeft = () => canvas.evaluate(el => el.scrollLeft);
   await page.mouse.move(viewport.x + 320, viewport.y + 20);
   await page.mouse.down();
   await page.mouse.move(viewport.x + 200, viewport.y + 20, { steps: 8 });
   await page.mouse.up();
-  await expect.poll(() => canvas.evaluate(el => el.scrollLeft)).toBe(120);
+  await expect.poll(scrollLeft).toBe(120);
   expect((await firstMember.boundingBox())?.x).toBe(initialMember.x);
   await page.mouse.wheel(300, 0);
-  await expect.poll(() => canvas.evaluate(el => el.scrollLeft)).toBeGreaterThan(120);
+  await expect.poll(scrollLeft).toBeGreaterThan(120);
+
+  const beforeThumbDrag = await scrollLeft();
+  const thumb = (await horizontal.locator('.schedule-scroll-thumb').boundingBox())!;
+  expect(thumb.width).toBeLessThan((await horizontal.boundingBox())!.width);
+  await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(thumb.x + thumb.width / 2 + 140, thumb.y + thumb.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(scrollLeft).toBeGreaterThan(beforeThumbDrag);
+
   await page.mouse.move(viewport.x + 64, viewport.y + 120);
   await page.mouse.wheel(0, 240);
   await expect.poll(() => canvas.evaluate(el => el.scrollTop)).toBeGreaterThan(0);

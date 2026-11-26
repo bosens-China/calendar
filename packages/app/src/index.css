@@ -55,3 +55,62 @@
 .canvas-viewport.is-panning {
   cursor: grabbing;
 }
+
+.schedule-canvas {
+  --member-column-width: 176px;
+  --schedule-scrollbar-size: 10px;
+}
+
+.schedule-scroll-area {
+  --member-bg: var(--color-zinc-50);
+  --member-border: var(--color-zinc-200);
+  --scroll-track: var(--color-zinc-100);
+  --scroll-thumb: var(--color-zinc-300);
+  --scroll-thumb-active: var(--color-zinc-400);
+  background:
+    linear-gradient(to right, var(--member-bg) calc(100% - 1px), var(--member-border) 0)
+    left / var(--member-column-width) 100% no-repeat;
+}
+
+.dark .schedule-scroll-area {
+  --member-bg: var(--color-zinc-900);
+  --member-border: var(--color-zinc-800);
+  --scroll-track: var(--color-zinc-900);
+  --scroll-thumb: var(--color-zinc-700);
+  --scroll-thumb-active: var(--color-zinc-500);
+}
+
+.schedule-scroll-area:has(.schedule-scrollbar[data-orientation="horizontal"]) {
+  padding-bottom: var(--schedule-scrollbar-size);
+}
+
+.schedule-scrollbar {
+  z-index: 45;
+  display: flex;
+  touch-action: none;
+  user-select: none;
+  padding: 2px;
+  background: var(--scroll-track);
+}
+
+.schedule-scrollbar[data-orientation="horizontal"] {
+  height: var(--schedule-scrollbar-size);
+  flex-direction: column;
+  margin-inline-start: var(--member-column-width);
+}
+
+.schedule-scrollbar[data-orientation="vertical"] {
+  width: var(--schedule-scrollbar-size);
+}
+
+.schedule-scroll-thumb {
+  flex: 1;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  transition: background-color 150ms;
+}
+
+.schedule-scrollbar:hover .schedule-scroll-thumb,
+.schedule-scrollbar:active .schedule-scroll-thumb {
+  background: var(--scroll-thumb-active);
+}

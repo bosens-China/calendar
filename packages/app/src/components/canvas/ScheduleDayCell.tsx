@@ -35,7 +35,7 @@ export function ScheduleDayCell({
   if (!workday) {
     return (
       <div
-        key={`${member.id}-${dateStr}`}
+        data-non-workday={dateStr}
         className={cn(
           'flex items-center justify-center border-b border-r border-zinc-200/60 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 text-[11px] text-zinc-500 whitespace-nowrap',
           period === 'week' ? 'min-h-[96px]' : 'min-h-[60px]',
