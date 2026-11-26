@@ -68,7 +68,8 @@ export function WorkbenchToolbar({
             <button
               key={p}
               type="button"
-              onClick={() => setCalendarPeriod(p)}
+              aria-pressed={calendarPeriod === p}
+              onClick={() => { void setCalendarPeriod(p); }}
               className={cn(
                 'rounded-md px-2.5 py-1 font-medium transition-all cursor-pointer',
                 calendarPeriod === p

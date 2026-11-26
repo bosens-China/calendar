@@ -99,8 +99,22 @@ test('Pages uses IndexedDB, persists across reloads and supports workbench filte
   await expect(hideNonWorkdays).toBeChecked();
   await page.keyboard.press('Escape');
   await expect(weekend).toHaveCount(0);
+
+  await page.getByRole('button', { name: '全部成员', exact: true }).click();
+  await page.getByRole('checkbox', { name: '本机成员', exact: true }).check();
+  await page.keyboard.press('Escape');
+  const monthToggle = page.getByRole('button', { name: '月', exact: true });
+  await monthToggle.click();
+  await expect(monthToggle).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTitle('上一周期').click();
+  await expect(canvas.locator('[data-date="2026-10-08"]')).toBeVisible();
+  await gapToggle.click();
+  await expect(gapToggle).toHaveAttribute('aria-pressed', 'true');
   await page.reload();
-  await expect(canvas).toBeVisible();
+  await expect(monthToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(canvas.locator('[data-date="2026-11-02"]')).toBeVisible();
+  await expect(gapToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('button', { name: '全部成员', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '账户菜单' }).click();
   await page.getByText('系统设置', { exact: true }).click();
   await page.getByRole('tab', { name: '日历显示' }).click();
@@ -111,6 +125,9 @@ test('Pages uses IndexedDB, persists across reloads and supports workbench filte
   await page.getByRole('button', { name: '恢复初始化状态' }).click();
   await expect(page.getByText('已恢复到初始化状态')).toBeVisible();
   await page.keyboard.press('Escape');
+  await page.reload();
+  await expect(page.getByRole('button', { name: '周', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(canvas).toBeVisible();
   await expect(page.getByText('本机保存的任务', { exact: true })).toHaveCount(0);
   await expect(page.getByText('本机成员', { exact: true })).toHaveCount(0);
   await expect(weekend).toBeVisible();

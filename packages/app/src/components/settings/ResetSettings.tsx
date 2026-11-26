@@ -15,6 +15,7 @@ interface Props {
 export function ResetSettings({ isAdmin }: Props) {
   const queryClient = useQueryClient();
   const resetUiState = useUiStore(state => state.resetUiState);
+  const setCalendarPeriod = useUiStore(state => state.setCalendarPeriod);
   const setHideNonWorkdays = useUiStore(state => state.setHideNonWorkdays);
   const setTheme = useThemeStore(state => state.setTheme);
   const updateCurrentUser = useAuthStore(state => state.updateCurrentUser);
@@ -25,6 +26,7 @@ export function ResetSettings({ isAdmin }: Props) {
       resetUiState();
       if (scope === 'factory' || scope === 'personal') {
         setTheme('auto');
+        await setCalendarPeriod('week');
         await setHideNonWorkdays(false);
       }
       if (scope === 'factory' && LOCAL_MODE) {

@@ -27,7 +27,11 @@ test('team mode isolates users and synchronizes logout between tabs', async ({ p
   await login(page, 'admin', adminPassword);
   await expect(page.getByText('管理员专属任务', { exact: true })).toBeVisible();
   await expect(page.getByText('成员专属任务', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '月', exact: true }).click();
+  const monthToggle = page.getByRole('button', { name: '月', exact: true });
+  await monthToggle.click();
+  await expect(monthToggle).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(monthToggle).toHaveAttribute('aria-pressed', 'true');
   const teamCanvas = page.getByRole('region', { name: '排期画布' });
   await expect(teamCanvas.locator('[data-non-workday="2026-11-28"]')).toHaveCount(2);
   const dateScrollbar = page.locator('.schedule-scrollbar[data-orientation="horizontal"]');
@@ -42,12 +46,18 @@ test('team mode isolates users and synchronizes logout between tabs', async ({ p
   await expect(memberPage.getByText('成员专属任务', { exact: true })).toBeVisible();
   await expect(memberPage.getByText('管理员专属任务', { exact: true })).toHaveCount(0);
   await expect(memberPage.getByRole('button', { name: '全部成员', exact: true })).toHaveCount(0);
+  await memberPage.getByRole('button', { name: '月', exact: true }).click();
   await memberPage.getByRole('button', { name: '账户菜单' }).click();
   await memberPage.getByText('系统设置', { exact: true }).click();
   await memberPage.getByRole('tab', { name: '重置' }).click();
   await expect(memberPage.getByRole('button', { name: '重置我的数据' })).toBeVisible();
   await expect(memberPage.getByRole('button', { name: '清空排期数据' })).toHaveCount(0);
   await expect(memberPage.getByRole('button', { name: '恢复初始化状态' })).toHaveCount(0);
+  memberPage.once('dialog', dialog => dialog.accept());
+  await memberPage.getByRole('button', { name: '重置我的数据' }).click();
+  await expect(memberPage.getByText('已清空本人请假记录并重置界面偏好')).toBeVisible();
+  await memberPage.reload();
+  await expect(memberPage.getByRole('button', { name: '周', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await memberContext.close();
 
   const secondTab = await page.context().newPage();

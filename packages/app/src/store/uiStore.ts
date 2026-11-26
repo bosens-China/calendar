@@ -7,15 +7,17 @@ import { dayjs, clampDateMin, canNavigatePrev } from '../utils/date';
 
 export type PeriodType = 'week' | 'month';
 
+const PERIOD_KEY = 'calendar_period';
 const NON_WORKDAYS_KEY = 'calendar_hide_non_workdays';
-let displayPreferenceChanged = false;
+let periodChanged = false;
+let nonWorkdayPreferenceChanged = false;
 
-function readHideNonWorkdays() {
-  if (LOCAL_MODE) return false;
+function readBrowserPreference(key: string) {
+  if (LOCAL_MODE) return null;
   try {
-    return window.localStorage.getItem(NON_WORKDAYS_KEY) === 'true';
+    return window.localStorage.getItem(key);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -27,7 +29,7 @@ interface UiState {
   onlyGap: boolean;
   hideNonWorkdays: boolean;
 
-  setCalendarPeriod: (period: PeriodType) => void;
+  setCalendarPeriod: (period: PeriodType) => Promise<void>;
   setCurrentDate: (date: string) => void;
   setSelectedProjectIds: (ids: string[]) => void;
   setSelectedMemberIds: (ids: string[]) => void;
@@ -41,20 +43,34 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  calendarPeriod: 'week',
+  calendarPeriod: readBrowserPreference(PERIOD_KEY) === 'month' ? 'month' : 'week',
   currentDate: clampDateMin(getCalendarDate()),
   selectedProjectIds: [],
   selectedMemberIds: [],
   onlyGap: false,
-  hideNonWorkdays: readHideNonWorkdays(),
+  hideNonWorkdays: readBrowserPreference(NON_WORKDAYS_KEY) === 'true',
 
-  setCalendarPeriod: (period) => set({ calendarPeriod: period }),
+  setCalendarPeriod: async (calendarPeriod) => {
+    periodChanged = true;
+    try {
+      if (LOCAL_MODE) {
+        await writeLocal(state => { state.calendarPeriod = calendarPeriod; });
+      } else if (calendarPeriod === 'month') {
+        window.localStorage.setItem(PERIOD_KEY, calendarPeriod);
+      } else {
+        window.localStorage.removeItem(PERIOD_KEY);
+      }
+    } catch {
+      toast.error('无法保存周/月视图偏好');
+    }
+    set({ calendarPeriod });
+  },
   setCurrentDate: (date) => set({ currentDate: clampDateMin(date) }),
   setSelectedProjectIds: (ids) => set({ selectedProjectIds: ids }),
   setSelectedMemberIds: (ids) => set({ selectedMemberIds: ids }),
   setOnlyGap: (onlyGap) => set({ onlyGap }),
   setHideNonWorkdays: async (hideNonWorkdays) => {
-    displayPreferenceChanged = true;
+    nonWorkdayPreferenceChanged = true;
     try {
       if (LOCAL_MODE) {
         await writeLocal(state => { state.hideNonWorkdays = hideNonWorkdays; });
@@ -92,7 +108,6 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   resetUiState: () => {
     set({
-      calendarPeriod: 'week',
       currentDate: clampDateMin(getCalendarDate()),
       selectedProjectIds: [],
       selectedMemberIds: [],
@@ -102,7 +117,11 @@ export const useUiStore = create<UiState>((set, get) => ({
 }));
 
 if (LOCAL_MODE) {
-  void readLocal(state => state.hideNonWorkdays ?? false).then(hideNonWorkdays => {
-    if (!displayPreferenceChanged) useUiStore.setState({ hideNonWorkdays });
+  void readLocal(({ calendarPeriod, hideNonWorkdays }) => ({ calendarPeriod, hideNonWorkdays })).then(preferences => {
+    const savedPeriod = preferences.calendarPeriod === 'month' ? 'month' : 'week';
+    useUiStore.setState(state => ({
+      calendarPeriod: periodChanged ? state.calendarPeriod : savedPeriod,
+      hideNonWorkdays: nonWorkdayPreferenceChanged ? state.hideNonWorkdays : preferences.hideNonWorkdays ?? false,
+    }));
   }).catch(() => {}); // IndexedDB errors are handled on startup.
 }

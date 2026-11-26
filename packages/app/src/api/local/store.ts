@@ -5,6 +5,7 @@ import {
 } from '@calendar/shared';
 
 import type { ThemePreference } from '../../store/themeStore';
+import type { PeriodType } from '../../store/uiStore';
 
 export const LOCAL_ADMIN_ID = 'local-admin';
 
@@ -16,6 +17,7 @@ interface LocalState {
   workSlots: WorkSlot[];
   holidays: HolidayOverride[];
   theme?: ThemePreference;
+  calendarPeriod?: PeriodType;
   hideNonWorkdays?: boolean;
 }
 
