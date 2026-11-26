@@ -9,5 +9,5 @@ export async function login(page: Page, username: string, password: string) {
   await page.getByPlaceholder('请输入登录账号').fill(username);
   await page.getByPlaceholder('请输入密码').fill(password);
   await page.getByRole('button', { name: '进入工作台', exact: true }).click();
-  await expect(page.getByLabel('日历布局')).toBeVisible();
+  await expect(page.getByRole('button', { name: '周', exact: true })).toBeVisible();
 }

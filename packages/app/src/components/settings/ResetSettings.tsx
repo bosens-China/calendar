@@ -15,6 +15,7 @@ interface Props {
 export function ResetSettings({ isAdmin }: Props) {
   const queryClient = useQueryClient();
   const resetUiState = useUiStore(state => state.resetUiState);
+  const setHideNonWorkdays = useUiStore(state => state.setHideNonWorkdays);
   const setTheme = useThemeStore(state => state.setTheme);
   const updateCurrentUser = useAuthStore(state => state.updateCurrentUser);
 
@@ -24,6 +25,7 @@ export function ResetSettings({ isAdmin }: Props) {
       resetUiState();
       if (scope === 'factory' || scope === 'personal') {
         setTheme('auto');
+        await setHideNonWorkdays(false);
       }
       if (scope === 'factory' && LOCAL_MODE) {
         const localUser = await getCurrentUserLocal();
@@ -53,7 +55,7 @@ export function ResetSettings({ isAdmin }: Props) {
           <div className="space-y-1">
             <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">重置我的数据与偏好</h4>
             <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-              清空你本人提交的所有请假记录，并将筛选条件、日历布局与外观主题恢复默认。不会影响管理员分配给你的任务或其他成员的数据。
+              清空你本人提交的所有请假记录，并将筛选条件、日历显示与外观主题恢复默认。不会影响管理员分配给你的任务或其他成员的数据。
             </p>
           </div>
           <Button
@@ -102,8 +104,8 @@ export function ResetSettings({ isAdmin }: Props) {
           <h4 className="text-sm font-semibold text-rose-700 dark:text-rose-400">恢复初始化状态</h4>
           <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
             {LOCAL_MODE
-              ? '清空全部任务、请假、自定义排期人员与项目，工作时段、节假日与外观主题全部恢复为初始默认状态。'
-              : '清空全部任务、请假、自定义项目以及其他成员账号与邀请（仅保留当前管理员账号），工作时段、节假日、角色名称与外观主题全部恢复默认。'}
+              ? '清空全部任务、请假、自定义排期人员与项目，恢复默认工作时段、节假日、日历显示与外观主题。'
+              : '清空全部任务、请假、自定义项目以及其他成员账号与邀请（仅保留当前管理员账号），恢复默认工作时段、节假日、角色名称、日历显示与外观主题。'}
           </p>
         </div>
         <Button

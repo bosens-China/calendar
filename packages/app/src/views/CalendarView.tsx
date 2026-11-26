@@ -34,7 +34,7 @@ export const CalendarView: React.FC = () => {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
 
-  const { calendarPeriod, currentDate, selectedProjectIds: projectFilter, selectedMemberId, onlyGap } = useUiStore();
+  const { calendarPeriod, currentDate, selectedProjectIds: projectFilter, selectedMemberIds: memberFilter, onlyGap } = useUiStore();
 
   const [entryOpen, setEntryOpen] = useState(false);
   const [entryMode, setEntryMode] = useState<ScheduleEntryMode>('task');
@@ -107,17 +107,20 @@ export const CalendarView: React.FC = () => {
   const activeProjects = useMemo(() => projects.filter(project => !project.archived), [projects]);
   const activeMembers = useMemo(() => members.filter(member => member.active), [members]);
   const selectedProjectIds = projectFilter.filter(id => activeProjects.some(project => project.id === id));
-  const memberFilter = isAdmin && activeMembers.some(member => member.id === selectedMemberId) ? selectedMemberId : null;
+  const selectedMemberIds = useMemo(
+    () => isAdmin ? memberFilter.filter(id => activeMembers.some(member => member.id === id)) : [],
+    [isAdmin, memberFilter, activeMembers],
+  );
   const todayStr = getCalendarDate();
   const rows = useMemo(() => {
     if (!hasData) return [];
-    const visibleMembers = memberFilter ? activeMembers.filter(member => member.id === memberFilter) : activeMembers;
+    const visibleMembers = selectedMemberIds.length
+      ? activeMembers.filter(member => selectedMemberIds.includes(member.id))
+      : activeMembers;
     return computeScheduleRows(visibleMembers, dates, tasks, leaves, workSlots, holidayMap, todayStr);
-  }, [hasData, memberFilter, activeMembers, dates, tasks, leaves, workSlots, holidayMap, todayStr]);
+  }, [hasData, selectedMemberIds, activeMembers, dates, tasks, leaves, workSlots, holidayMap, todayStr]);
   const gapRows = rows.filter(row => row.gap > 0);
-  const hideColdStartGapBadge = activeMembers.length <= 1 && tasks.length === 0 && leaves.length === 0 && !onlyGap;
-  const membersWithGap = hideColdStartGapBadge ? 0 : gapRows.length;
-  const totalGapMinutes = hideColdStartGapBadge ? 0 : gapRows.reduce((total, row) => total + row.gap, 0);
+  const totalGapMinutes = gapRows.reduce((total, row) => total + row.gap, 0);
 
   const openCreateModal = (opts?: {
     mode?: ScheduleEntryMode;
@@ -187,8 +190,8 @@ export const CalendarView: React.FC = () => {
         activeProjects={activeProjects}
         activeMembers={activeMembers}
         selectedProjectIds={selectedProjectIds}
-        memberFilter={memberFilter}
-        membersWithGap={membersWithGap}
+        selectedMemberIds={selectedMemberIds}
+        membersWithGap={gapRows.length}
         totalGapMinutes={totalGapMinutes}
         hasData={hasData}
         openCreate={() => openCreateModal()}
@@ -209,6 +212,8 @@ export const CalendarView: React.FC = () => {
       {hasData && (
         <ScheduleCanvas
           period={calendarPeriod}
+          today={todayStr}
+          onlyGap={onlyGap}
           dates={dates}
           rows={onlyGap ? gapRows : rows}
           visibleProjectIds={selectedProjectIds}

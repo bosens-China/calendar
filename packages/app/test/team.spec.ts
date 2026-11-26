@@ -35,7 +35,7 @@ test('team mode isolates users and synchronizes logout between tabs', async ({ p
   await login(memberPage, account.username, account.password);
   await expect(memberPage.getByText('成员专属任务', { exact: true })).toBeVisible();
   await expect(memberPage.getByText('管理员专属任务', { exact: true })).toHaveCount(0);
-  await expect(memberPage.getByLabel('按成员筛选')).toHaveCount(0);
+  await expect(memberPage.getByRole('button', { name: '全部成员', exact: true })).toHaveCount(0);
   await memberPage.getByRole('button', { name: '账户菜单' }).click();
   await memberPage.getByText('系统设置', { exact: true }).click();
   await memberPage.getByRole('tab', { name: '重置' }).click();
@@ -46,7 +46,7 @@ test('team mode isolates users and synchronizes logout between tabs', async ({ p
 
   const secondTab = await page.context().newPage();
   await secondTab.goto(teamUrl);
-  await expect(secondTab.getByLabel('日历布局')).toBeVisible();
+  await expect(secondTab.getByRole('button', { name: '周', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '账户菜单' }).click();
   page.once('dialog', dialog => dialog.accept());
   await page.getByText('退出登录', { exact: true }).click();
@@ -113,7 +113,7 @@ test('team invitation opens an assigned account using only a password', async ({
   await expect(join.locator('input')).toHaveCount(1);
   await join.getByLabel('设置密码').fill('browser-invited-password');
   await join.getByRole('button', { name: '加入团队' }).click();
-  await expect(join.getByLabel('日历布局')).toBeVisible();
+  await expect(join.getByRole('button', { name: '周', exact: true })).toBeVisible();
   await expect(join.getByRole('button', { name: '请假', exact: true })).toBeVisible();
 
   await join.getByRole('button', { name: '账户菜单' }).click();

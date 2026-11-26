@@ -3,26 +3,24 @@ import { MoreHorizontal, UserPlus } from 'lucide-react';
 import type {
   HolidayOverride,
   Leave,
-  Member,
-  MemberDaySchedule,
   Project,
   Task,
   WorkSlot,
 } from '@calendar/shared';
-import { formatHours, getCalendarDate, isWorkday } from '@calendar/shared';
+import { formatHours, isWorkday } from '@calendar/shared';
 import { useAuthStore } from '../../store/authStore';
 import { useUiStore } from '../../store/uiStore';
 import { dayjs, SHORT_WEEKDAY_NAMES_ZH } from '../../utils/date';
 import { cn } from '../ui/primitives';
 import type { ScheduleRow } from './scheduleRows';
-import { TraditionalCalendar } from './TraditionalCalendar';
-import { DaySchedulePopover } from './DaySchedulePopover';
 import { ScheduleDayCell } from './ScheduleDayCell';
 import type { ScheduleDayActions } from './scheduleDay';
 import { LOCAL_MODE } from '../../api';
 
 interface Props {
   period: 'week' | 'month';
+  today: string;
+  onlyGap: boolean;
   dates: string[];
   rows: ScheduleRow[];
   visibleProjectIds: string[];
@@ -50,6 +48,8 @@ const Y_AXIS_WIDTH = 176;
 
 export const ScheduleCanvas: React.FC<Props> = ({
   period,
+  today,
+  onlyGap,
   dates,
   rows,
   visibleProjectIds,
@@ -64,9 +64,8 @@ export const ScheduleCanvas: React.FC<Props> = ({
   onOpenMembers,
 }) => {
   const { user } = useAuthStore();
-  const { calendarLayout, hideNonWorkdays } = useUiStore();
+  const hideNonWorkdays = useUiStore(state => state.hideNonWorkdays);
   const isAdmin = user?.role === 'admin';
-  const todayStr = getCalendarDate();
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const panRef = useRef({
@@ -88,7 +87,8 @@ export const ScheduleCanvas: React.FC<Props> = ({
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.button !== 1) return;
-    if ((e.target as HTMLElement).closest('[data-interactive="true"]')) return;
+    panRef.current.moved = false;
+    if ((e.target as HTMLElement).closest('button, [data-interactive="true"]')) return;
     const el = viewportRef.current;
     if (!el) return;
     panRef.current = {
@@ -106,7 +106,8 @@ export const ScheduleCanvas: React.FC<Props> = ({
     if (!panRef.current.active || !viewportRef.current) return;
     const dx = e.clientX - panRef.current.startX;
     const dy = e.clientY - panRef.current.startY;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) panRef.current.moved = true;
+    if (!panRef.current.moved && Math.abs(dx) <= 4 && Math.abs(dy) <= 4) return;
+    panRef.current.moved = true;
     viewportRef.current.scrollLeft = panRef.current.scrollLeft - dx;
     viewportRef.current.scrollTop = panRef.current.scrollTop - dy;
   };
@@ -139,40 +140,23 @@ export const ScheduleCanvas: React.FC<Props> = ({
     });
   };
 
-  const gridTemplateColumns = useMemo(() => {
-    if (period === 'week') {
-      const cols = displayDates.map((d) =>
-        isWorkday(d, holidayMap) ? 'minmax(184px, 1fr)' : 'minmax(112px, 124px)',
-      );
-      return `${Y_AXIS_WIDTH}px ${cols.join(' ')}`;
-    }
-    const cols = displayDates.map((d) => (isWorkday(d, holidayMap) ? '58px' : '48px'));
-    return `${Y_AXIS_WIDTH}px ${cols.join(' ')}`;
-  }, [period, displayDates, holidayMap]);
+  const dateColumns = period === 'month'
+    ? displayDates.map(() => '104px')
+    : displayDates.map(date => isWorkday(date, holidayMap) ? 'minmax(184px, 1fr)' : 'minmax(112px, 124px)');
+  const gridTemplateColumns = `${Y_AXIS_WIDTH}px ${dateColumns.join(' ') || 'minmax(0, 1fr)'}`;
 
   const dayActions: ScheduleDayActions = {
     visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick,
   };
-  const renderDay = (day: MemberDaySchedule, member: Member) =>
-    <DaySchedulePopover {...dayActions} day={day} member={member} isPast={day.date < todayStr} />;
-
-  if (calendarLayout === 'calendar') {
-    return (
-      <TraditionalCalendar
-        dates={dates}
-        rows={rows}
-        holidayMap={holidayMap}
-        today={todayStr}
-        hideNonWorkdays={hideNonWorkdays}
-        renderDay={renderDay}
-      />
-    );
-  }
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col bg-white dark:bg-zinc-950">
+    <main className="flex flex-1 min-h-0 flex-col bg-white dark:bg-zinc-950">
       <div
         ref={viewportRef}
+        key={`${period}:${dates[0]}`}
+        role="region"
+        aria-label="排期画布"
+        tabIndex={0}
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={endPan}
@@ -183,9 +167,10 @@ export const ScheduleCanvas: React.FC<Props> = ({
         )}
       >
         <div
-          className="grid min-w-full"
+          className="grid min-h-full min-w-full"
           style={{
             gridTemplateColumns,
+            gridTemplateRows: `repeat(${displayDates.length ? rows.length + 1 : 1}, max-content) minmax(0, 1fr)`,
             width: period === 'month' ? 'max-content' : '100%',
           }}
         >
@@ -201,18 +186,20 @@ export const ScheduleCanvas: React.FC<Props> = ({
             const weekdayIdx = d.isoWeekday() - 1;
             const holiday = holidayMap.get(dateStr);
             const workday = isWorkday(dateStr, holidayMap);
-            const isToday = dateStr === todayStr;
+            const isToday = dateStr === today;
+            const isFutureMonthDate = period === 'month' && dateStr > today;
 
             return (
               <div
-                key={`head-${dateStr}`}
+                key={dateStr}
+                data-date={dateStr}
                 className={cn(
                   'sticky top-0 z-30 flex flex-col justify-center border-b border-r border-zinc-100 dark:border-zinc-800/70 backdrop-blur-xs',
-                  isToday
-                    ? 'bg-blue-50/45 dark:bg-blue-500/10'
-                    : workday
-                      ? 'bg-white/95 dark:bg-zinc-950/95'
-                      : 'bg-zinc-100/70 dark:bg-zinc-900/60',
+                  !workday || isFutureMonthDate
+                    ? 'bg-zinc-100 dark:bg-zinc-900'
+                    : isToday
+                      ? 'bg-blue-50 dark:bg-blue-950'
+                      : 'bg-white dark:bg-zinc-950',
                   period === 'week' ? 'px-3 py-2.5' : 'px-1 py-2.5 items-center',
                 )}
               >
@@ -264,14 +251,14 @@ export const ScheduleCanvas: React.FC<Props> = ({
           })}
 
           {/* Y-Axis Rows & Cells */}
-          {rows.map(({ member, dayMap, expected, scheduled, gap, periodGap, saturation }) => {
+          {displayDates.length > 0 && rows.map(({ member, dayMap, expected, scheduled, gap, periodGap, saturation }) => {
             const memberColor = member.avatarColor || '#2563eb';
             const pct = Math.round(saturation * 100);
 
             return (
               <React.Fragment key={member.id}>
                 {/* Sticky Member Header (clearly separated from main canvas) */}
-                <div className="group sticky left-0 z-20 flex flex-col justify-center gap-2 border-b border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/85 dark:bg-zinc-900/90 px-4 py-3.5 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.06)]">
+                <div className="group sticky left-0 z-20 flex flex-col justify-center gap-2 border-b border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 py-3.5 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.06)]">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span
@@ -327,7 +314,8 @@ export const ScheduleCanvas: React.FC<Props> = ({
 
                 {displayDates.map(date => (
                   <ScheduleDayCell key={date} dateStr={date} period={period} member={member}
-                    daySched={dayMap.get(date)} isToday={date === todayStr} isPast={date < todayStr} isAdmin={isAdmin}
+                    daySched={dayMap.get(date)} isToday={date === today} isPast={date < today} isAdmin={isAdmin}
+                    isFutureMonthDate={period === 'month' && date > today} onlyGap={onlyGap}
                     actions={dayActions} didPan={() => panRef.current.moved}
                     handleDragStart={handleDragStart} handleDropOnDay={handleDropOnDay}
                   />
@@ -336,55 +324,60 @@ export const ScheduleCanvas: React.FC<Props> = ({
             );
           })}
 
-          {/* Inline Bottom Add Member */}
-          {isAdmin && (
-            <>
-              <div className="sticky left-0 z-20 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/85 dark:bg-zinc-900/90 px-4 py-3 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.06)]">
-                <button
-                  type="button"
-                  data-interactive="true"
-                  onClick={onOpenMembers}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-200 cursor-pointer"
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  {LOCAL_MODE ? '添加排期人员' : '邀请成员'}
-                </button>
-              </div>
-              <div
-                className="bg-white dark:bg-zinc-950"
-                style={{ gridColumn: `span ${displayDates.length}` }}
-              />
-            </>
+          <div aria-hidden="true" className="sticky left-0 z-20 border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900" />
+          {displayDates.length > 0 && (!onlyGap || rows.length > 0) && displayDates.map(date => (
+            <div key={date} aria-hidden="true" className={cn(
+              (!isWorkday(date, holidayMap) || (period === 'month' && date > today))
+                && 'bg-zinc-100 dark:bg-zinc-900',
+            )} />
+          ))}
+          {(!displayDates.length || (onlyGap && !rows.length)) && (
+            <p className="p-4 text-xs text-zinc-500 dark:text-zinc-400" style={{ gridColumn: '2 / -1' }}>
+              {displayDates.length ? '当前周期没有待排空档' : '当前周期没有工作日'}
+            </p>
           )}
         </div>
       </div>
 
-      {/* Subtle Bottom Legend Bar */}
-      <footer className="flex h-8 shrink-0 items-center justify-between border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/60 dark:bg-zinc-900/50 px-4 text-[11px] text-zinc-400 dark:text-zinc-500">
-        <div className="flex items-center gap-4">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-blue-500" />
-            成员色 · 已排期
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-rose-400" />
-            浅红 · 全天空档
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-amber-400" />
-            浅黄 · 当天未满
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-zinc-400" />
-            浅灰 · 请假
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-zinc-200 dark:bg-zinc-700" />
-            淡灰 · 过去未排（可补录）
-          </span>
+      <footer className="flex shrink-0 items-stretch border-t border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
+        {isAdmin && (
+          <div className="shrink-0 border-r border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900" style={{ width: Y_AXIS_WIDTH }}>
+            <button
+              type="button"
+              onClick={onOpenMembers}
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-800 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-200"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              {LOCAL_MODE ? '添加排期人员' : '邀请成员'}
+            </button>
+          </div>
+        )}
+        <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-blue-500" />
+              成员色 · 已排期
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-rose-400" />
+              浅红 · 全天空档
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              浅黄 · 当天未满
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-zinc-400" />
+              浅灰 · 请假
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+              淡灰 · 过去未排（可补录）
+            </span>
+          </div>
+          <span className="hidden sm:inline">触控板自由滑动 · 拖动画布空白处可平移</span>
         </div>
-        <span className="hidden sm:inline">触控板自由滑动 · 拖动画布空白处可平移</span>
       </footer>
-    </div>
+    </main>
   );
 };

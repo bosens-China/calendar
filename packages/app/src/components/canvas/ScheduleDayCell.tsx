@@ -14,6 +14,8 @@ interface Props {
   daySched?: MemberDaySchedule;
   isToday: boolean;
   isPast: boolean;
+  isFutureMonthDate: boolean;
+  onlyGap: boolean;
   isAdmin: boolean;
   actions: ScheduleDayActions;
   didPan: () => boolean;
@@ -22,7 +24,8 @@ interface Props {
 }
 
 export function ScheduleDayCell({
-  period, dateStr, member, daySched, isToday, isPast, isAdmin, actions, didPan, handleDragStart, handleDropOnDay,
+  period, dateStr, member, daySched, isToday, isPast, isFutureMonthDate, onlyGap, isAdmin,
+  actions, didPan, handleDragStart, handleDropOnDay,
 }: Props) {
   const { visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick } = actions;
   const memberColor = member.avatarColor || '#2563eb';
@@ -34,7 +37,7 @@ export function ScheduleDayCell({
       <div
         key={`${member.id}-${dateStr}`}
         className={cn(
-          'flex items-center justify-center border-b border-r border-zinc-100 dark:border-zinc-800/60 bg-zinc-100/65 dark:bg-zinc-900/45 text-[11px] text-zinc-400/80 dark:text-zinc-600 whitespace-nowrap',
+          'flex items-center justify-center border-b border-r border-zinc-200/60 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 text-[11px] text-zinc-500 whitespace-nowrap',
           period === 'week' ? 'min-h-[96px]' : 'min-h-[60px]',
         )}
       >
@@ -198,6 +201,11 @@ export function ScheduleDayCell({
 
   // Month View
   const fillStatus = daySched?.fillStatus ?? 'empty';
+  const hasHiddenTasks = visibleProjectIds.length > 0
+    && daySched?.slots.some(slot => slot.segments.length > 0)
+    && !daySched.slots.some(slot => slot.segments.some(({ task }) => visibleProjectIds.includes(task.projectId)));
+  const muted = isPast || (isFutureMonthDate && !onlyGap);
+  const neutralBadge = hasHiddenTasks || (fillStatus === 'empty' && muted);
   const satPct = Math.round((daySched?.saturation ?? 0) * 100);
 
   return (
@@ -218,7 +226,9 @@ export function ScheduleDayCell({
           ? 'bg-blue-50 dark:bg-blue-500/15'
           : isToday
             ? 'bg-blue-50/15 dark:bg-blue-500/[0.04]'
-            : 'bg-white dark:bg-zinc-950',
+            : isFutureMonthDate
+              ? 'bg-zinc-100 dark:bg-zinc-900'
+              : 'bg-white dark:bg-zinc-950',
       )}
     >
       <PopoverCard
@@ -228,11 +238,10 @@ export function ScheduleDayCell({
             data-interactive="true"
             className={cn(
               'relative flex h-9 w-full overflow-hidden rounded-lg border transition-transform hover:scale-105 cursor-pointer',
-              fillStatus === 'empty' &&
-                (isPast
-                  ? 'bg-zinc-50/70 border-zinc-200/60 text-zinc-300 dark:bg-zinc-900/40 dark:border-zinc-800/70 dark:text-zinc-600'
-                  : 'bg-rose-50 border-rose-200 text-rose-600 dark:bg-rose-500/15 dark:border-rose-500/30 dark:text-rose-400'),
-              fillStatus === 'partial' &&
+              neutralBadge && 'border-zinc-200 bg-zinc-50/70 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400',
+              !neutralBadge && fillStatus === 'empty' &&
+                'bg-rose-50 border-rose-200 text-rose-600 dark:bg-rose-500/15 dark:border-rose-500/30 dark:text-rose-400',
+              !neutralBadge && fillStatus === 'partial' &&
                 (isPast
                   ? 'bg-zinc-50 border-zinc-200 text-zinc-600 dark:bg-zinc-900/60 dark:border-zinc-700 dark:text-zinc-300'
                   : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/15 dark:border-amber-500/30 dark:text-amber-400'),
@@ -240,7 +249,7 @@ export function ScheduleDayCell({
                 'bg-zinc-100 border-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400',
             )}
             style={
-              fillStatus === 'full'
+              !hasHiddenTasks && fillStatus === 'full'
                 ? {
                     backgroundColor: `${memberColor}24`,
                     borderColor: `${memberColor}55`,
@@ -249,7 +258,7 @@ export function ScheduleDayCell({
                 : undefined
             }
           >
-            {fillStatus === 'partial' && (
+            {!hasHiddenTasks && fillStatus === 'partial' && (
               <span
                 className="h-full shrink-0"
                 style={{
@@ -259,7 +268,7 @@ export function ScheduleDayCell({
               />
             )}
             <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold">
-              {fillStatus === 'full'
+              {hasHiddenTasks ? '—' : fillStatus === 'full'
                 ? '●'
                 : fillStatus === 'empty'
                   ? isPast ? '—' : '空'

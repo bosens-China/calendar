@@ -1,25 +1,38 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { getCalendarDate } from '@calendar/shared';
+import { LOCAL_MODE } from '../api';
+import { readLocal, writeLocal } from '../api/local/store';
 import { dayjs, clampDateMin, canNavigatePrev } from '../utils/date';
 
 export type PeriodType = 'week' | 'month';
 
+const NON_WORKDAYS_KEY = 'calendar_hide_non_workdays';
+let displayPreferenceChanged = false;
+
+function readHideNonWorkdays() {
+  if (LOCAL_MODE) return false;
+  try {
+    return window.localStorage.getItem(NON_WORKDAYS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 interface UiState {
-  calendarLayout: 'timeline' | 'calendar';
   calendarPeriod: PeriodType;
   currentDate: string; // YYYY-MM-DD
   selectedProjectIds: string[]; // empty means all
-  selectedMemberId: string | null; // null means all
+  selectedMemberIds: string[]; // empty means all
   onlyGap: boolean;
   hideNonWorkdays: boolean;
 
-  setCalendarLayout: (layout: UiState['calendarLayout']) => void;
   setCalendarPeriod: (period: PeriodType) => void;
   setCurrentDate: (date: string) => void;
   setSelectedProjectIds: (ids: string[]) => void;
-  setSelectedMemberId: (id: string | null) => void;
-  setOnlyGap: (onlyGap: boolean | ((prev: boolean) => boolean)) => void;
-  setHideNonWorkdays: (hide: boolean | ((prev: boolean) => boolean)) => void;
+  setSelectedMemberIds: (ids: string[]) => void;
+  setOnlyGap: (onlyGap: boolean) => void;
+  setHideNonWorkdays: (hide: boolean) => Promise<void>;
 
   prevPeriod: () => void;
   nextPeriod: () => void;
@@ -28,25 +41,33 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  calendarLayout: 'timeline',
   calendarPeriod: 'week',
   currentDate: clampDateMin(getCalendarDate()),
   selectedProjectIds: [],
-  selectedMemberId: null,
+  selectedMemberIds: [],
   onlyGap: false,
-  hideNonWorkdays: false,
+  hideNonWorkdays: readHideNonWorkdays(),
 
-  setCalendarLayout: (calendarLayout) => set({ calendarLayout }),
   setCalendarPeriod: (period) => set({ calendarPeriod: period }),
   setCurrentDate: (date) => set({ currentDate: clampDateMin(date) }),
   setSelectedProjectIds: (ids) => set({ selectedProjectIds: ids }),
-  setSelectedMemberId: (id) => set({ selectedMemberId: id }),
-  setOnlyGap: (val) =>
-    set((state) => ({ onlyGap: typeof val === 'function' ? val(state.onlyGap) : val })),
-  setHideNonWorkdays: (val) =>
-    set((state) => ({
-      hideNonWorkdays: typeof val === 'function' ? val(state.hideNonWorkdays) : val,
-    })),
+  setSelectedMemberIds: (ids) => set({ selectedMemberIds: ids }),
+  setOnlyGap: (onlyGap) => set({ onlyGap }),
+  setHideNonWorkdays: async (hideNonWorkdays) => {
+    displayPreferenceChanged = true;
+    try {
+      if (LOCAL_MODE) {
+        await writeLocal(state => { state.hideNonWorkdays = hideNonWorkdays; });
+      } else if (hideNonWorkdays) {
+        window.localStorage.setItem(NON_WORKDAYS_KEY, 'true');
+      } else {
+        window.localStorage.removeItem(NON_WORKDAYS_KEY);
+      }
+      set({ hideNonWorkdays });
+    } catch {
+      toast.error('无法保存日历显示偏好');
+    }
+  },
 
   prevPeriod: () => {
     const { currentDate, calendarPeriod } = get();
@@ -71,13 +92,17 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   resetUiState: () => {
     set({
-      calendarLayout: 'timeline',
       calendarPeriod: 'week',
       currentDate: clampDateMin(getCalendarDate()),
       selectedProjectIds: [],
-      selectedMemberId: null,
+      selectedMemberIds: [],
       onlyGap: false,
-      hideNonWorkdays: false,
     });
   },
 }));
+
+if (LOCAL_MODE) {
+  void readLocal(state => state.hideNonWorkdays ?? false).then(hideNonWorkdays => {
+    if (!displayPreferenceChanged) useUiStore.setState({ hideNonWorkdays });
+  }).catch(() => {}); // IndexedDB errors are handled on startup.
+}

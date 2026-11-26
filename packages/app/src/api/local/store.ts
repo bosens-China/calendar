@@ -16,6 +16,7 @@ interface LocalState {
   workSlots: WorkSlot[];
   holidays: HolidayOverride[];
   theme?: ThemePreference;
+  hideNonWorkdays?: boolean;
 }
 
 function initialState(): LocalState {
