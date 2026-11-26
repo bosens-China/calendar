@@ -43,7 +43,7 @@ docker compose up -d
 
 - GitHub Pages 的发布来源设为 **GitHub Actions**。推送 `main` 并通过验证后，工作流发布 IndexedDB 版。
 - 工作流使用 Docker Hub 账号 `boses` 发布，默认镜像为 `boses/calendar`。在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 添加有推送权限的密钥 `DOCKERHUB_TOKEN` 即可启用镜像发布。需要发布到其他镜像仓库时，可以设置 `DOCKERHUB_IMAGE`。
-- 验证通过后，`main` 发布 `latest`，版本标签 `vX.Y.Z` 发布对应版本。镜像支持 Linux amd64 和 arm64。
+- 验证通过后，`main` 发布 `latest`，版本标签 `vX.Y.Z` 发布对应版本。两种镜像架构（Linux amd64 和 arm64）都通过容器启动和数据持久化检查后才发布。
 
 ## 本地开发
 
