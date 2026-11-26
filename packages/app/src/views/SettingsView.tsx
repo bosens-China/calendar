@@ -4,6 +4,7 @@ import { Tabs } from '../components/ui/overlays';
 import { HolidaySettings } from '../components/settings/HolidaySettings';
 import { WorkSlotsSettings } from '../components/settings/WorkSlotsSettings';
 import { ProfileSettings } from '../components/settings/ProfileSettings';
+import { ResetSettings } from '../components/settings/ResetSettings';
 import { RoleSettings } from '../components/settings/RoleSettings';
 
 const tabs = [
@@ -11,6 +12,7 @@ const tabs = [
   ['holidays', '法定节假日与调休'],
   ['profile', '个人资料'],
   ['roles', '角色显示名称'],
+  ['reset', '重置'],
 ] as const;
 
 export function SettingsView() {
@@ -32,6 +34,7 @@ export function SettingsView() {
       <Tabs.Content value="holidays"><HolidaySettings isAdmin={isAdmin} /></Tabs.Content>
       <Tabs.Content value="profile">{user && <ProfileSettings user={user} />}</Tabs.Content>
       {canEditRoles && <Tabs.Content value="roles"><RoleSettings /></Tabs.Content>}
+      <Tabs.Content value="reset"><ResetSettings isAdmin={isAdmin} /></Tabs.Content>
     </Tabs.Root>
   );
 }

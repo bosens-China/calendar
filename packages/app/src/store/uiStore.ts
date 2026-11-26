@@ -24,6 +24,7 @@ interface UiState {
   prevPeriod: () => void;
   nextPeriod: () => void;
   goToToday: () => void;
+  resetUiState: () => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -66,5 +67,17 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   goToToday: () => {
     set({ currentDate: clampDateMin(getCalendarDate()) });
+  },
+
+  resetUiState: () => {
+    set({
+      calendarLayout: 'timeline',
+      calendarPeriod: 'week',
+      currentDate: clampDateMin(getCalendarDate()),
+      selectedProjectIds: [],
+      selectedMemberId: null,
+      onlyGap: false,
+      hideNonWorkdays: false,
+    });
   },
 }));

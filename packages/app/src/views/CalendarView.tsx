@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { Leave, Task, WorkSlot } from '@calendar/shared';
+import { getCalendarDate, type Leave, type Task, type WorkSlot } from '@calendar/shared';
 import { leavesApi, LOCAL_MODE, membersApi, projectsApi, settingsApi, tasksApi } from '../api';
 import { useAuthStore } from '../store/authStore';
 import { useUiStore } from '../store/uiStore';
@@ -108,14 +108,16 @@ export const CalendarView: React.FC = () => {
   const activeMembers = useMemo(() => members.filter(member => member.active), [members]);
   const selectedProjectIds = projectFilter.filter(id => activeProjects.some(project => project.id === id));
   const memberFilter = isAdmin && activeMembers.some(member => member.id === selectedMemberId) ? selectedMemberId : null;
+  const todayStr = getCalendarDate();
   const rows = useMemo(() => {
     if (!hasData) return [];
     const visibleMembers = memberFilter ? activeMembers.filter(member => member.id === memberFilter) : activeMembers;
-    return computeScheduleRows(visibleMembers, dates, tasks, leaves, workSlots, holidayMap);
-  }, [hasData, memberFilter, activeMembers, dates, tasks, leaves, workSlots, holidayMap]);
+    return computeScheduleRows(visibleMembers, dates, tasks, leaves, workSlots, holidayMap, todayStr);
+  }, [hasData, memberFilter, activeMembers, dates, tasks, leaves, workSlots, holidayMap, todayStr]);
   const gapRows = rows.filter(row => row.gap > 0);
-  const membersWithGap = gapRows.length;
-  const totalGapMinutes = gapRows.reduce((total, row) => total + row.gap, 0);
+  const hideColdStartGapBadge = activeMembers.length <= 1 && tasks.length === 0 && leaves.length === 0 && !onlyGap;
+  const membersWithGap = hideColdStartGapBadge ? 0 : gapRows.length;
+  const totalGapMinutes = hideColdStartGapBadge ? 0 : gapRows.reduce((total, row) => total + row.gap, 0);
 
   const openCreateModal = (opts?: {
     mode?: ScheduleEntryMode;

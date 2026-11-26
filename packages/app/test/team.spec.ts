@@ -36,6 +36,12 @@ test('team mode isolates users and synchronizes logout between tabs', async ({ p
   await expect(memberPage.getByText('成员专属任务', { exact: true })).toBeVisible();
   await expect(memberPage.getByText('管理员专属任务', { exact: true })).toHaveCount(0);
   await expect(memberPage.getByLabel('按成员筛选')).toHaveCount(0);
+  await memberPage.getByRole('button', { name: '账户菜单' }).click();
+  await memberPage.getByText('系统设置', { exact: true }).click();
+  await memberPage.getByRole('tab', { name: '重置' }).click();
+  await expect(memberPage.getByRole('button', { name: '重置我的数据' })).toBeVisible();
+  await expect(memberPage.getByRole('button', { name: '清空排期数据' })).toHaveCount(0);
+  await expect(memberPage.getByRole('button', { name: '恢复初始化状态' })).toHaveCount(0);
   await memberContext.close();
 
   const secondTab = await page.context().newPage();

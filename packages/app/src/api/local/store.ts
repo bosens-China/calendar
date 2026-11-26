@@ -84,3 +84,15 @@ export async function writeLocal<T>(operation: (state: LocalState) => T) {
     await handled;
   }
 }
+
+export async function resetLocalWorkspace() {
+  const db = await openCalendar();
+  const tx = db.transaction('workspace', 'readwrite');
+  const handled = tx.done.catch(() => {});
+  try {
+    await tx.store.put(initialState(), 'calendar');
+    await tx.done;
+  } finally {
+    await handled;
+  }
+}

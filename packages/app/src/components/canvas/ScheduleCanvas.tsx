@@ -154,7 +154,7 @@ export const ScheduleCanvas: React.FC<Props> = ({
     visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick,
   };
   const renderDay = (day: MemberDaySchedule, member: Member) =>
-    <DaySchedulePopover {...dayActions} day={day} member={member} />;
+    <DaySchedulePopover {...dayActions} day={day} member={member} isPast={day.date < todayStr} />;
 
   if (calendarLayout === 'calendar') {
     return (
@@ -264,7 +264,7 @@ export const ScheduleCanvas: React.FC<Props> = ({
           })}
 
           {/* Y-Axis Rows & Cells */}
-          {rows.map(({ member, dayMap, expected, scheduled, gap, saturation }) => {
+          {rows.map(({ member, dayMap, expected, scheduled, gap, periodGap, saturation }) => {
             const memberColor = member.avatarColor || '#2563eb';
             const pct = Math.round(saturation * 100);
 
@@ -305,27 +305,29 @@ export const ScheduleCanvas: React.FC<Props> = ({
 
                   <div
                     className="flex items-center gap-2"
-                    title={`已排 ${formatHours(scheduled)} / 应出勤 ${formatHours(expected)}${gap > 0 ? ` · 空余 ${formatHours(gap)}` : ''}`}
+                    title={expected > 0
+                      ? `已排 ${formatHours(scheduled)} / 应出勤 ${formatHours(expected)}${periodGap > 0 ? ` · ${gap > 0 ? '空余' : '未排'} ${formatHours(periodGap)}` : ''}`
+                      : '当前周期暂无待排工作日'}
                   >
                     <div className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
                       <div
                         className="h-full rounded-full transition-all duration-300"
                         style={{
-                          width: `${pct}%`,
+                          width: `${expected > 0 ? pct : 0}%`,
                           backgroundColor:
-                            gap === 0 ? memberColor : pct === 0 ? '#f43f5e' : '#f59e0b',
+                            expected === 0 ? 'transparent' : periodGap === 0 ? memberColor : pct === 0 ? '#f43f5e' : '#f59e0b',
                         }}
                       />
                     </div>
                     <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
-                      {pct}%
+                      {expected > 0 ? `${pct}%` : '—'}
                     </span>
                   </div>
                 </div>
 
                 {displayDates.map(date => (
                   <ScheduleDayCell key={date} dateStr={date} period={period} member={member}
-                    daySched={dayMap.get(date)} isToday={date === todayStr} isAdmin={isAdmin}
+                    daySched={dayMap.get(date)} isToday={date === todayStr} isPast={date < todayStr} isAdmin={isAdmin}
                     actions={dayActions} didPan={() => panRef.current.moved}
                     handleDragStart={handleDragStart} handleDropOnDay={handleDropOnDay}
                   />
@@ -375,6 +377,10 @@ export const ScheduleCanvas: React.FC<Props> = ({
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-zinc-400" />
             浅灰 · 请假
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+            淡灰 · 过去未排（可补录）
           </span>
         </div>
         <span className="hidden sm:inline">触控板自由滑动 · 拖动画布空白处可平移</span>

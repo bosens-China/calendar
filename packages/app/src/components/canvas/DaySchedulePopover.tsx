@@ -5,8 +5,8 @@ import { cn } from '../ui/primitives';
 import { mergeDayTasks, type ScheduleDayActions } from './scheduleDay';
 
 export function DaySchedulePopover({
-  day, member, visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick,
-}: ScheduleDayActions & { day: MemberDaySchedule; member: Member }) {
+  day, member, isPast = false, visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick,
+}: ScheduleDayActions & { day: MemberDaySchedule; member: Member; isPast?: boolean }) {
   const memberColor = member.avatarColor || '#2563eb';
   const mergedTasks = mergeDayTasks(day, visibleProjectIds);
   const gapSlots = day.slots.filter((s) => s.gapMinutes > 0);
@@ -84,13 +84,15 @@ export function DaySchedulePopover({
               onClick={() => onSlotClick(member.id, day.date, gs.slot)}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors',
-                day.fillStatus === 'empty'
-                  ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25'
-                  : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400 dark:hover:bg-amber-500/25',
+                isPast
+                  ? 'bg-zinc-100/80 text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-400 dark:hover:bg-zinc-700/80'
+                  : day.fillStatus === 'empty'
+                    ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400 dark:hover:bg-amber-500/25',
               )}
             >
               <span>
-                {gs.slot.label}空余 {formatHours(gs.gapMinutes)}
+                {isPast ? `${gs.slot.label}补录` : `${gs.slot.label}空余`} {formatHours(gs.gapMinutes)}
               </span>
               <Plus className="h-3.5 w-3.5" />
             </button>

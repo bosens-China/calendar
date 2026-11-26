@@ -46,9 +46,13 @@ export function TraditionalCalendar({ dates, rows, holidayMap, today, hideNonWor
               {(!hideNonWorkdays || workday) && rows.map(({ member, dayMap }) => {
                 const day = dayMap.get(date);
                 if (!day || (!workday && day.leaves.length === 0)) return null;
+                const isPast = date < today;
                 const status = day.fillStatus === 'on_leave' ? '请假'
-                  : day.gapMinutes > 0 ? `空余 ${formatHours(day.gapMinutes)}`
-                  : workday ? '已排满' : '请假';
+                  : day.gapMinutes > 0
+                    ? isPast
+                      ? day.fillStatus === 'empty' ? '未排期' : `未排 ${formatHours(day.gapMinutes)}`
+                      : `空余 ${formatHours(day.gapMinutes)}`
+                    : workday ? '已排满' : '请假';
                 return (
                   <PopoverCard
                     key={member.id}
@@ -56,7 +60,10 @@ export function TraditionalCalendar({ dates, rows, holidayMap, today, hideNonWor
                     trigger={
                       <button type="button" className="mb-1 flex w-full items-center justify-between gap-1 rounded border border-zinc-200 px-1.5 py-1 text-left text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
                         <span className="truncate" style={{ color: member.avatarColor }}>{member.name}</span>
-                        <span className={cn('shrink-0 text-[10px]', day.gapMinutes > 0 && (day.fillStatus === 'empty' ? 'text-rose-600' : 'text-amber-700'))}>{status}</span>
+                        <span className={cn(
+                          'shrink-0 text-[10px]',
+                          day.gapMinutes > 0 && (isPast ? 'text-zinc-400 dark:text-zinc-500' : day.fillStatus === 'empty' ? 'text-rose-600' : 'text-amber-700'),
+                        )}>{status}</span>
                       </button>
                     }
                   >

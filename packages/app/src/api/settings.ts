@@ -1,4 +1,4 @@
-import type { HolidayOverride, WorkSlot } from '@calendar/shared';
+import type { HolidayOverride, ResetScope, WorkSlot } from '@calendar/shared';
 import { request } from './client';
 
 function checkedList<T>(value: T[]): T[] {
@@ -60,6 +60,13 @@ export async function resetHolidaysApi(year?: number): Promise<HolidayOverride[]
   return checkedList(holidays);
 }
 
+export async function resetWorkspaceApi(scope: ResetScope): Promise<{ scope: ResetScope }> {
+  return request<{ scope: ResetScope }>('/api/settings/reset', {
+    method: 'POST',
+    body: JSON.stringify({ scope }),
+  });
+}
+
 export const settingsApi = {
   getWorkSlots: getWorkSlotsApi,
   updateWorkSlots: updateWorkSlotsApi,
@@ -68,4 +75,5 @@ export const settingsApi = {
   deleteHoliday: deleteHolidayApi,
   syncHolidays: syncHolidaysApi,
   resetHolidays: resetHolidaysApi,
+  resetWorkspace: resetWorkspaceApi,
 };

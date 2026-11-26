@@ -13,6 +13,7 @@ interface Props {
   member: Member;
   daySched?: MemberDaySchedule;
   isToday: boolean;
+  isPast: boolean;
   isAdmin: boolean;
   actions: ScheduleDayActions;
   didPan: () => boolean;
@@ -21,7 +22,7 @@ interface Props {
 }
 
 export function ScheduleDayCell({
-  period, dateStr, member, daySched, isToday, isAdmin, actions, didPan, handleDragStart, handleDropOnDay,
+  period, dateStr, member, daySched, isToday, isPast, isAdmin, actions, didPan, handleDragStart, handleDropOnDay,
 }: Props) {
   const { visibleProjectIds, projectMap, workSlots, onTaskClick, onLeaveClick, onSlotClick } = actions;
   const memberColor = member.avatarColor || '#2563eb';
@@ -144,10 +145,27 @@ export function ScheduleDayCell({
               if (didPan()) return;
               onSlotClick(member.id, dateStr);
             }}
-            className="flex flex-1 min-h-[44px] items-center justify-center gap-1 rounded-lg bg-rose-50/75 text-[11px] font-medium text-rose-500 transition-colors hover:bg-rose-100/80 hover:text-rose-600 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 cursor-pointer"
+            className={cn(
+              'flex flex-1 min-h-[44px] items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer',
+              isPast
+                ? 'bg-zinc-50/65 text-zinc-300 hover:bg-zinc-100/80 hover:text-zinc-500 dark:bg-zinc-900/40 dark:text-zinc-600 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-400'
+                : 'bg-rose-50/75 text-rose-500 hover:bg-rose-100/80 hover:text-rose-600 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20',
+            )}
           >
-            <span>全天空档</span>
-            <Plus className="h-3 w-3 opacity-0 transition-opacity group-hover/cell:opacity-100" />
+            {isPast ? (
+              <>
+                <span className="group-hover/cell:hidden">未排期</span>
+                <span className="hidden items-center gap-1 group-hover/cell:inline-flex">
+                  补录排期
+                  <Plus className="h-3 w-3" />
+                </span>
+              </>
+            ) : (
+              <>
+                <span>全天空档</span>
+                <Plus className="h-3 w-3 opacity-0 transition-opacity group-hover/cell:opacity-100" />
+              </>
+            )}
           </button>
         ) : (
           gapSlots.map((gs) => (
@@ -160,10 +178,15 @@ export function ScheduleDayCell({
                 if (didPan()) return;
                 onSlotClick(member.id, dateStr, gs.slot);
               }}
-              className="flex items-center justify-between rounded-lg bg-amber-50/85 px-2.5 py-1.5 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-100/80 dark:bg-amber-500/12 dark:text-amber-400 dark:hover:bg-amber-500/20 cursor-pointer"
+              className={cn(
+                'flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors cursor-pointer',
+                isPast
+                  ? 'bg-zinc-50/80 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:bg-zinc-900/50 dark:text-zinc-500 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-300'
+                  : 'bg-amber-50/85 text-amber-700 hover:bg-amber-100/80 dark:bg-amber-500/12 dark:text-amber-400 dark:hover:bg-amber-500/20',
+              )}
             >
               <span>
-                {gs.slot.label}空余 {formatHours(gs.gapMinutes)}
+                {gs.slot.label}{isPast ? '未排' : '空余'} {formatHours(gs.gapMinutes)}
               </span>
               <Plus className="h-3 w-3 opacity-60" />
             </button>
@@ -206,9 +229,13 @@ export function ScheduleDayCell({
             className={cn(
               'relative flex h-9 w-full overflow-hidden rounded-lg border transition-transform hover:scale-105 cursor-pointer',
               fillStatus === 'empty' &&
-                'bg-rose-50 border-rose-200 text-rose-600 dark:bg-rose-500/15 dark:border-rose-500/30 dark:text-rose-400',
+                (isPast
+                  ? 'bg-zinc-50/70 border-zinc-200/60 text-zinc-300 dark:bg-zinc-900/40 dark:border-zinc-800/70 dark:text-zinc-600'
+                  : 'bg-rose-50 border-rose-200 text-rose-600 dark:bg-rose-500/15 dark:border-rose-500/30 dark:text-rose-400'),
               fillStatus === 'partial' &&
-                'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/15 dark:border-amber-500/30 dark:text-amber-400',
+                (isPast
+                  ? 'bg-zinc-50 border-zinc-200 text-zinc-600 dark:bg-zinc-900/60 dark:border-zinc-700 dark:text-zinc-300'
+                  : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/15 dark:border-amber-500/30 dark:text-amber-400'),
               fillStatus === 'on_leave' &&
                 'bg-zinc-100 border-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400',
             )}
@@ -235,7 +262,7 @@ export function ScheduleDayCell({
               {fillStatus === 'full'
                 ? '●'
                 : fillStatus === 'empty'
-                  ? '空'
+                  ? isPast ? '—' : '空'
                   : fillStatus === 'on_leave'
                     ? '假'
                     : `${satPct}%`}
@@ -243,7 +270,7 @@ export function ScheduleDayCell({
           </button>
         }
       >
-        {daySched && <DaySchedulePopover {...actions} day={daySched} member={member} />}
+        {daySched && <DaySchedulePopover {...actions} day={daySched} member={member} isPast={isPast} />}
       </PopoverCard>
     </div>
   );

@@ -1,15 +1,20 @@
+import { randomUUID } from 'node:crypto';
 import type { CalendarDb } from './db.js';
 import {
-  calendarDate, DEFAULT_CN_HOLIDAYS, getCalendarYear, holidayFields, holidayResetBody,
-  holidaySettings, holidaySyncBody, roleLabelsSchema, validateWorkSlots, yearQuery,
+  calendarDate, DEFAULT_CN_HOLIDAYS, DEFAULT_WORK_SLOTS, getCalendarYear, holidayFields,
+  holidayResetBody, holidaySettings, holidaySyncBody, resetBody, roleLabelsSchema,
+  validateWorkSlots, yearQuery,
 } from '@calendar/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { requireAdmin, type Env } from './auth.js';
 import { transaction } from './db.js';
 import { holidays, replaceHolidays, saveSetting, workSlots } from './store.js';
-import { holidays as holidayTable } from './schema.js';
+import {
+  holidays as holidayTable, invitations as invitationTable, leaves as leaveTable,
+  members as memberTable, projects as projectTable, settings as settingTable, tasks as taskTable,
+} from './schema.js';
 import { readRoleLabels } from './role-labels.js';
 import { MIN_ALLOWED_DATE, MIN_ALLOWED_YEAR, markHolidayManual, syncYearHolidays } from './holiday-sync.js';
 
@@ -113,6 +118,47 @@ export function settingsRoutes(db: CalendarDb) {
       for (const touchedYear of touchedYears) markHolidayManual(db, touchedYear);
     });
     return c.json({ holidays: holidays(db) });
+  });
+  app.post('/settings/reset', async c => {
+    const { scope } = resetBody.parse(await c.req.json());
+    const user = c.get('user');
+    if (scope !== 'personal' && user.role !== 'admin') {
+      throw new HTTPException(403, { message: '需要管理员权限' });
+    }
+    transaction(db, tx => {
+      const actor = tx.select({ id: memberTable.id, role: memberTable.role, active: memberTable.active })
+        .from(memberTable)
+        .where(eq(memberTable.id, user.id))
+        .get();
+      if (!actor || !actor.active) {
+        throw new HTTPException(401, { message: '登录凭证无效或已过期' });
+      }
+      if (scope !== 'personal' && actor.role !== 'admin') {
+        throw new HTTPException(403, { message: '需要管理员权限' });
+      }
+      if (scope === 'personal') {
+        tx.delete(leaveTable).where(and(eq(leaveTable.memberId, user.id), eq(leaveTable.createdBy, user.id))).run();
+        return;
+      }
+      tx.delete(taskTable).run();
+      tx.delete(leaveTable).run();
+      if (scope === 'factory') {
+        const now = new Date().toISOString();
+        tx.delete(invitationTable).run();
+        tx.delete(projectTable).run();
+        tx.insert(projectTable).values([
+          { name: '核心研发', color: '#1677ff' },
+          { name: '运维支持', color: '#13a8a8' },
+        ].map(project => ({
+          ...project, id: randomUUID(), description: '', archived: false, createdAt: now, updatedAt: now,
+        }))).run();
+        tx.delete(memberTable).where(ne(memberTable.id, user.id)).run();
+        tx.delete(settingTable).where(ne(settingTable.key, 'jwtSecret')).run();
+        tx.insert(settingTable).values({ key: 'workSlots', value: JSON.stringify(DEFAULT_WORK_SLOTS) }).run();
+        replaceHolidays(tx, DEFAULT_CN_HOLIDAYS.filter(day => day.date >= MIN_ALLOWED_DATE));
+      }
+    });
+    return c.json({ scope });
   });
   return app;
 }

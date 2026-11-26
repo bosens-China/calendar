@@ -3,7 +3,7 @@ import { swaggerUI } from '@hono/swagger-ui';
 import type { ZodTypeAny } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import {
-  forgotPasswordSchema, invitationAccept, invitationCreate, invitationTokenBody, profilePatch, roleLabelsSchema, holidayFields, holidayResetBody, holidaySettings, holidaySyncBody,
+  forgotPasswordSchema, invitationAccept, invitationCreate, invitationTokenBody, profilePatch, resetBody, roleLabelsSchema, holidayFields, holidayResetBody, holidaySettings, holidaySyncBody,
   leaveCreate, leavePatch, leaveQuery, loginBody, memberCreate, memberPatch, memberPasswordBody,
   passwordChangeBody, projectCreate, projectPatch, slotSettings, summaryQuery, taskCreate,
   taskPatch, taskQuery, yearQuery,
@@ -37,6 +37,7 @@ const requests: Record<string, ZodTypeAny> = {
   'PUT /api/settings/holidays/:date': holidayFields,
   'POST /api/settings/holidays/reset': holidayResetBody,
   'POST /api/settings/holidays/sync': holidaySyncBody,
+  'POST /api/settings/reset': resetBody,
 };
 
 const publicRoutes = new Set(['/api/health', '/api/auth/login', '/api/auth/forgot-password',

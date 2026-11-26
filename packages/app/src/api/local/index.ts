@@ -2,16 +2,16 @@ import {
   calendarDate, checkDates, checkSpan, checkSummarySpan, computePeriodSummary, DEFAULT_CN_HOLIDAYS,
   fetchYearHolidaysFromGithub, getCalendarYear, holidayFields, holidayResetBody, holidaySyncBody,
   leaveCreate, leavePatch, leaveQuery, localMemberCreate, localMemberPatch, projectCreate,
-  projectPatch, summaryQuery, taskCreate, taskPatch, taskQuery, validateWorkSlots,
+  projectPatch, resetBody, summaryQuery, taskCreate, taskPatch, taskQuery, validateWorkSlots,
   type CreateLeaveRequest, type CreateProjectRequest, type CreateTaskRequest, type HolidayOverride,
-  type Leave, type Member, type Project, type Task, type UpdateLeaveRequest, type UpdateMemberRequest,
+  type Leave, type Member, type Project, type ResetScope, type Task, type UpdateLeaveRequest, type UpdateMemberRequest,
   type UpdateProjectRequest, type UpdateTaskRequest, type WorkSlot,
 } from '@calendar/shared';
 import type { ManagedMemberInput } from '../members';
 import type { LeaveQueryParams } from '../leaves';
 import type { SummaryQueryParams } from '../summary';
 import type { TaskQueryParams } from '../tasks';
-import { LOCAL_ADMIN_ID, readLocal, writeLocal } from './store';
+import { LOCAL_ADMIN_ID, readLocal, resetLocalWorkspace, writeLocal } from './store';
 
 type Entity = Pick<Member, 'id' | 'updatedAt'>;
 
@@ -186,6 +186,26 @@ export const localSettings = {
   resetHolidays: (year?: number) => {
     const targetYear = holidayResetBody.parse({ year }).year;
     return replaceYear(targetYear, datesInYear(DEFAULT_CN_HOLIDAYS, targetYear));
+  },
+  resetWorkspace: async (scope: ResetScope) => {
+    const parsed = resetBody.parse({ scope }).scope;
+    if (parsed === 'factory') {
+      await resetLocalWorkspace();
+      return { scope: parsed };
+    }
+    if (parsed === 'personal') {
+      await writeLocal(state => {
+        state.leaves = state.leaves.filter(
+          leave => !(leave.memberId === LOCAL_ADMIN_ID && leave.createdBy === LOCAL_ADMIN_ID),
+        );
+      });
+      return { scope: parsed };
+    }
+    await writeLocal(state => {
+      state.tasks = [];
+      state.leaves = [];
+    });
+    return { scope: parsed };
   },
 };
 

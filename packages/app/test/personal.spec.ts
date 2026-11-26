@@ -19,6 +19,12 @@ test('Pages uses IndexedDB, persists across reloads and supports traditional vie
   await expect(page.getByLabel('日历布局')).toBeVisible();
   await expect(page.getByPlaceholder('请输入密码')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '接受团队邀请' })).toHaveCount(0);
+  await expect(page.getByText('未排期', { exact: true })).toHaveCount(2);
+  await expect(page.getByText('全天空档', { exact: true })).toHaveCount(3);
+  await expect(page.getByRole('button', { name: /人空档/ })).toHaveCount(0);
+  await page.getByText('未排期', { exact: true }).first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: '添加排期人员' }).click();
   const memberDialog = page.getByRole('dialog');
@@ -73,6 +79,13 @@ test('Pages uses IndexedDB, persists across reloads and supports traditional vie
   await page.getByRole('button', { name: '账户菜单' }).click();
   await page.getByText('系统设置', { exact: true }).click();
   await expect(page.getByRole('tab', { name: '角色显示名称' })).toHaveCount(0);
+  await page.getByRole('tab', { name: '重置' }).click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: '恢复初始化状态' }).click();
+  await expect(page.getByText('已恢复到初始化状态')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('本机保存的任务', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('本机成员', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expect(apiRequests).toEqual([]);
 });
